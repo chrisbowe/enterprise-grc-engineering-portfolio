@@ -1,0 +1,44 @@
+﻿name: "Compliance-as-Code Policy Gate"
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  push:
+    branches: [ "main" ]
+
+jobs:
+  compliance-audit:
+    name: "Evaluate NIST & CIS Guardrails"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Open Policy Agent (OPA)
+        uses: open-policy-agent/setup-opa@v2
+        with:
+          version: 'latest'
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init & Plan
+        run: |
+          terraform init -backend=false
+          terraform plan -out=tfplan.binary
+          terraform show -json tfplan.binary > tfplan.json
+
+      - name: Run OPA Conftest / Policy Evaluation
+        run: |
+          echo "Evaluating Terraform plan against NIST CSF 2.0 & CIS Benchmark policies..."
+          opa eval --data policies/nist_csf_cis_controls.rego --input tfplan.json "data.terraform.compliance.deny" > eval_result.json
+          
+          # Fail the build if any violations are returned
+          VIOLATIONS=$(jq '.result[0].expressions[0].value | length' eval_result.json)
+          if [ "$VIOLATIONS" -gt 0 ]; then
+            echo "❌ CRITICAL: Compliance violations detected!"
+            jq '.result[0].expressions[0].value' eval_result.json
+            exit 1
+          fi
+          echo "✅ All compliance guardrails passed successfully."

@@ -1,0 +1,35 @@
+﻿[
+  {
+    "id": "SCEN-01",
+    "name": "Ransomware Extortion via Edge Gateway Vulnerability",
+    "threat_community": "Organized Cybercrime Syndicates",
+    "asset": "Core Customer Database & Transaction Processing Cluster",
+    "threat_event_frequency_range": [0.5, 2.0, 6.0],
+    "vulnerability_prob": 0.35,
+    "primary_loss_range": [250000, 600000, 1500000],
+    "secondary_loss_prob": 0.40,
+    "secondary_loss_range": [500000, 1200000, 4500000]
+  },
+  {
+    "id": "SCEN-02",
+    "name": "Cloud Storage Exfiltration via Compromised IAM Credential",
+    "threat_community": "Opportunistic Threat Actors / Credential Stuffing",
+    "asset": "Enterprise Analytics S3 Data Lake",
+    "threat_event_frequency_range": [2.0, 5.0, 12.0],
+    "vulnerability_prob": 0.15,
+    "primary_loss_range": [100000, 300000, 800000],
+    "secondary_loss_prob": 0.60,
+    "secondary_loss_range": [200000, 750000, 2500000]
+  },
+  {
+    "id": "SCEN-03",
+    "name": "Critical Third-Party SaaS Service Provider Outage",
+    "threat_community": "Supply Chain Single Point of Failure",
+    "asset": "Customer Billing and Authentication Gateway",
+    "threat_event_frequency_range": [0.2, 1.0, 3.0],
+    "vulnerability_prob": 0.70,
+    "primary_loss_range": [50000, 200000, 500000],
+    "secondary_loss_prob": 0.10,
+    "secondary_loss_range": [20000, 100000, 300000]
+  }
+]
