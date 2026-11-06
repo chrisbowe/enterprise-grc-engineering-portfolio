@@ -1,0 +1,27 @@
+name: "Compliance-as-Code Policy Gate"
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  push:
+    branches: [ "main" ]
+
+jobs:
+  compliance-audit:
+    name: "Evaluate NIST and CIS Guardrails"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Open Policy Agent (OPA)
+        uses: open-policy-agent/setup-opa@v2
+        with:
+          version: 'latest'
+
+      - name: Run Policy Unit Tests
+        run: |
+          cd 02-compliance-as-code-pipeline
+          chmod +x run_policy_tests.sh
+          bash run_policy_tests.sh
