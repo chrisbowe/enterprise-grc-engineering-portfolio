@@ -38,6 +38,7 @@ Regulatory references (verify against current text before relying on them)
 
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Dict, Optional
 
 # Qualitative factors named in the SEC's adopting release for Item 1.05.
@@ -88,6 +89,11 @@ def add_business_days(start: date, days: int, holidays=frozenset()) -> date:
             days -= 1
     return d
 
+
+
+def _require_tz(dt: Optional[datetime], name: str):
+    if dt is not None and dt.tzinfo is None:
+        raise ValueError(f"{name} must be timezone-aware (pass a tz-aware datetime)")
 
 def _iso(dt: Optional[datetime]) -> Optional[str]:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if dt else None
@@ -154,7 +160,9 @@ class IncidentMaterialityScreen:
         if p.is_sec_registrant:
             due = None
             if f.determination_time:
-                due = add_business_days(f.determination_time.astimezone(timezone.utc).date(), 4, self.holidays).isoformat()
+                _require_tz(f.determination_time, "determination_time")
+                ny_date = f.determination_time.astimezone(ZoneInfo("America/New_York")).date()
+                due = add_business_days(ny_date, 4, self.holidays).isoformat()
             regimes.append({
                 "regime": "SEC Form 8-K Item 1.05",
                 "test": "Registrant determines the incident is MATERIAL (decision by registrant, not this tool).",
@@ -174,9 +182,14 @@ class IncidentMaterialityScreen:
                                        "intermediate report within 72h of the initial notification; final report within one month "
                                        "after the latest intermediate report.")
                 if f.awareness_time:
+                    _require_tz(f.awareness_time, "awareness_time")
+                    _require_tz(f.dora_classification_time, "dora_classification_time")
                     outer = f.awareness_time + timedelta(hours=24)
                     inner = f.dora_classification_time + timedelta(hours=4) if f.dora_classification_time else None
-                    initial_due = min(outer, inner) if inner else outer
+                    if inner and f.dora_classification_time > outer:
+                        initial_due = inner  # late classification: 24h cap no longer applies per RTS
+                    else:
+                        initial_due = min(outer, inner) if inner else outer
                     entry["initial_notification_due"] = _iso(initial_due)
             else:
                 entry["status"] = "Classified NOT major - no DORA major-incident notification; keep records."

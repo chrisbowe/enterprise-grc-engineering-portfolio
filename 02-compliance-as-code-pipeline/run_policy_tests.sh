@@ -1,19 +1,31 @@
 #!/usr/bin/env bash
-# Runs the Rego policy against the fixtures. Requires the `opa` CLI (0.59+ or 1.x).
+# Runs the Rego policy against test plan fixtures. Requires the `opa` CLI (0.59+ or 1.x).
 set -euo pipefail
 cd "$(dirname "$0")"
-POLICY="nist_csf_cis_controls.rego"
+
+POLICY="policies/nist_csf_cis_controls.rego"
+if [ ! -f "$POLICY" ]; then
+  POLICY="nist_csf_cis_controls.rego"
+fi
 
 opa check --strict "$POLICY"
 
-check() {  # <fixture> <expected allow> <expected deny count>
-  local f="test-fixtures/$1" allow count
+check() {
+  local fixture="$1"
+  local expected_allow="$2"
+  local expected_denies="$3"
+  local f="test-fixtures/$fixture"
+  if [ ! -f "$f" ]; then
+    f="$fixture"
+  fi
+
+  local allow count
   allow=$(opa eval -f raw -i "$f" -d "$POLICY" 'data.terraform.compliance.allow')
   count=$(opa eval -f raw -i "$f" -d "$POLICY" 'count(data.terraform.compliance.deny)')
-  if [[ "$allow" == "$2" && "$count" == "$3" ]]; then
-    echo "PASS  $1  (allow=$allow, denies=$count)"
+  if [[ "$allow" == "$expected_allow" && "$count" == "$expected_denies" ]]; then
+    echo "PASS  $fixture  (allow=$allow, denies=$count)"
   else
-    echo "FAIL  $1  expected allow=$2 denies=$3, got allow=$allow denies=$count"
+    echo "FAIL  $fixture  expected allow=$expected_allow denies=$expected_denies, got allow=$allow denies=$count"
     opa eval -f pretty -i "$f" -d "$POLICY" 'data.terraform.compliance.deny'
     exit 1
   fi

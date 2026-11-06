@@ -110,7 +110,7 @@ def run_monte_carlo_fair(scenario, iterations=100_000, rng=None):
         vuln = np.full(iterations, _check_prob("vulnerability_prob", v))
 
     # Loss events per year: Poisson(TEF * Vuln). TEF is a rate, so counts are
-    # random even for a fixed TEF; rounding the rate (old code) removed that.
+    # random even for a fixed TEF; rounding the rate removed that.
     tef = _draw(rng, tef_range, iterations, dist)
     events = rng.poisson(tef * vuln)
 
@@ -147,7 +147,7 @@ def analyze_scenario(scenario, iterations=100_000, rng=None):
     }
     result.update({k: round(v, 4 if k.startswith("prob") or k.startswith("mean_") else 2)
                    for k, v in summarize(losses, events).items()})
-    return result, losses
+    return result, losses, events
 
 
 # ----------------------------------------------------------------------------
@@ -198,14 +198,16 @@ def main(argv=None):
     seed = args.seed if args.seed is not None else int(np.random.SeedSequence().entropy % (2**32))
     child_seeds = np.random.SeedSequence(seed).spawn(len(scenarios))
 
-    results, all_losses = [], []
+    results, all_losses, all_events = [], [], []
     for sc, cs in zip(scenarios, child_seeds):
-        res, losses = analyze_scenario(sc, args.iterations, np.random.default_rng(cs))
+        res, losses, events = analyze_scenario(sc, args.iterations, np.random.default_rng(cs))
         results.append(res)
         all_losses.append(losses)
+        all_events.append(events)
 
     portfolio_losses = np.sum(all_losses, axis=0)
-    portfolio = summarize(portfolio_losses, np.zeros_like(portfolio_losses))
+    portfolio_events = np.sum(all_events, axis=0)
+    portfolio = summarize(portfolio_losses, portfolio_events)
     print_executive_report(results, portfolio, seed)
     return 0
 

@@ -27,7 +27,7 @@ allow if count(deny) == 0
 # ---------------------------------------------------------------------------
 
 # Resources that will exist after apply. Deleted resources have change.after == null
-# and must not be evaluated (the old rule denied bucket deletions).
+# and must not be evaluated .
 live_resources contains r if {
 	some r in input.resource_changes
 	r.mode == "managed"
@@ -39,7 +39,7 @@ to_list(x) := x if is_array(x)
 to_list(x) := [x] if not is_array(x)
 
 # ---------------------------------------------------------------------------
-# Fail closed on malformed input (previously an empty/odd input meant "allow")
+# Fail closed on malformed input 
 # ---------------------------------------------------------------------------
 deny contains msg if {
 	not input.format_version

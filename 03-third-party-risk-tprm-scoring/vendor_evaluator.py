@@ -2,19 +2,6 @@
 """
 Third-Party Risk Management (TPRM) & Vendor Intake Scoring Engine
 
-What changed vs. the first version
-----------------------------------
-* Control requirements now SCALE WITH TIER (see TIER_REQUIREMENTS, the single place
-  to tune policy). A Tier 4 public-data vendor is no longer held to Tier 1 controls.
-* Breach-notification SLA is tier-based and must be SHORTER than the enterprise's own
-  regulatory clocks (a vendor at exactly 72h leaves no time to meet a 72h GDPR deadline).
-* SOC 2 recency is computed from `soc2_report_period_end` when supplied; the old
-  boolean `soc2_type_2_current` is still accepted but flagged as self-attested.
-* The verdict reflects HIGH findings (previously only CRITICAL mattered), and the
-  contradictory "REJECTED - CONDITIONAL" label is gone.
-* Missing data fails closed (no data_access section -> error, no SLA -> finding).
-* Tiering also considers network connectivity and business criticality.
-
 Input JSON (keys marked * are optional additions)
 -------------------------------------------------
 vendor_name, vendor_id, business_owner
