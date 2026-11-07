@@ -1,4 +1,4 @@
-name: "Compliance-as-Code Policy Gate"
+name: "Compliance & Security Engineering CI"
 
 on:
   pull_request:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   compliance-audit:
-    name: "Evaluate NIST and CIS Guardrails"
+    name: "Evaluate NIST and CIS Guardrails (OPA)"
     runs-on: ubuntu-latest
 
     steps:
@@ -28,3 +28,22 @@ jobs:
           cd 02-compliance-as-code-pipeline
           chmod +x run_policy_tests.sh
           bash run_policy_tests.sh
+
+  python-tests:
+    name: "Python Lab Test Suite (Pytest)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Pytest Suite
+        run: pytest tests/

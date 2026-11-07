@@ -1,6 +1,6 @@
 import os
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 import numpy as np
 
@@ -9,14 +9,19 @@ try:
 except ImportError:
     pytest = None
 
-sys.path.insert(0, os.path.abspath('01-fair-risk-quantification-engine'))
-sys.path.insert(0, os.path.abspath('03-third-party-risk-tprm-scoring'))
-sys.path.insert(0, os.path.abspath('04-sec-dora-incident-disclosure'))
+# Construct absolute paths relative to this test file so tests run from any directory
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(REPO_ROOT, "01-fair-risk-quantification-engine"))
+sys.path.insert(0, os.path.join(REPO_ROOT, "03-third-party-risk-tprm-scoring"))
+sys.path.insert(0, os.path.join(REPO_ROOT, "04-sec-dora-incident-disclosure"))
 
 from fair_engine import analyze_scenario, run_monte_carlo_fair, summarize
 from vendor_evaluator import VendorRiskEvaluator
 from materiality_calculator import IncidentMaterialityScreen, IncidentFacts, EntityProfile
 
+# -----------------------------------------------------------------------------
+# Lab 1: FAIR Quantitative Risk Quantification Engine
+# -----------------------------------------------------------------------------
 def test_fair_engine_reproducibility():
     scenario = {
         "id": "TEST-01",
@@ -50,6 +55,40 @@ def test_fair_portfolio_event_accumulation():
     summary = summarize(losses, events)
     assert summary["mean_loss_events"] > 0.0
 
+def test_fair_simulated_mean_matches_analytic_expectation():
+    """
+    Validates that per-event sampling converges to compound Poisson analytic expectation:
+      E[Loss] = E[Events] * (E[Primary] + P(Secondary) * E[Secondary])
+    """
+    scenario = {
+        "id": "ANALYTIC-01",
+        "name": "Analytic Convergence Test",
+        "asset": "Server Cluster",
+        "threat_community": "Threat Actors",
+        "threat_event_frequency_range": [2, 4, 6],
+        "vulnerability_prob": 0.5,
+        "primary_loss_range": [10000, 20000, 30000],
+        "secondary_loss_prob": 0.5,
+        "secondary_loss_range": [10000, 20000, 30000]
+    }
+    rng = np.random.default_rng(42)
+    losses, events = run_monte_carlo_fair(scenario, iterations=50_000, rng=rng)
+
+    # Analytic expectation calculation:
+    mean_tef = (2 + 4 * 4 + 6) / 6.0                  # 4.0
+    mean_events = mean_tef * 0.5                       # 2.0
+    mean_prim = (10000 + 4 * 20000 + 30000) / 6.0      # 20000.0
+    mean_sec = (10000 + 4 * 20000 + 30000) / 6.0       # 20000.0
+    mean_loss_per_event = mean_prim + 0.5 * mean_sec   # 30000.0
+    expected_annual_loss = mean_events * mean_loss_per_event  # 60000.0
+
+    simulated_mean = float(np.mean(losses))
+    rel_err = abs(simulated_mean - expected_annual_loss) / expected_annual_loss
+    assert rel_err < 0.02, f"Expected ~{expected_annual_loss}, got {simulated_mean} (rel_err {rel_err:.4f})"
+
+# -----------------------------------------------------------------------------
+# Lab 3: Third-Party Risk Management (TPRM) Scoring Engine
+# -----------------------------------------------------------------------------
 def test_vendor_evaluator_tier_scaling():
     t1_vendor = {
         "vendor_name": "CloudCo", "vendor_id": "V-1", "business_owner": "CTO",
@@ -83,44 +122,70 @@ def test_vendor_evaluator_finding_generation():
     dossier = evaluator.generate_procurement_dossier()
     assert dossier["procurement_status"] == "REJECTED - REMEDIATE BEFORE PROCUREMENT"
 
-def test_sec_due_date_eastern_time():
+# -----------------------------------------------------------------------------
+# Lab 4: SEC & DORA Regulatory Incident Materiality Screening Aid
+# -----------------------------------------------------------------------------
+def test_sec_due_date_uses_eastern_time_and_holidays():
+    """
+    Thu 9 PM ET = Fri 2 AM UTC.
+    In ET (Nov 5) with Veterans Day (Nov 11) skipped:
+      Fri Nov 6 (1), Mon Nov 9 (2), Tue Nov 10 (3), Wed Nov 11 (HOLIDAY), Thu Nov 12 (4).
+    A UTC-based calculation starts Fri Nov 6 and yields Fri Nov 13.
+    """
     ET = ZoneInfo("America/New_York")
-    det_time = datetime(2026, 11, 6, 21, 0, tzinfo=ET) # Friday 9 PM ET
+    det = datetime(2026, 11, 5, 21, 0, tzinfo=ET)
+    vets_day = frozenset({date(2026, 11, 11)})
     facts = IncidentFacts(
-        incident_name="SEC Disclosure Test",
-        rev_impact_per_hour=5000.0,
-        downtime_hours=4.0,
-        records_exposed=1000,
-        determination_time=det_time
-    )
-    profile = EntityProfile(annual_revenue=100_000_000.0, is_sec_registrant=True)
-    assessment = IncidentMaterialityScreen(facts, profile)
-    screen = assessment.screen()
-    sec_regime = [r for r in screen["regulatory_regimes"] if "SEC" in r["regime"]][0]
-    # 4 business days from Friday Nov 6 is Thursday Nov 12
-    assert sec_regime["filing_due_date"] == "2026-11-12"
-
-def test_sec_rejects_naive_datetime():
-    det_time_naive = datetime(2026, 11, 6, 21, 0) # naive
-    facts = IncidentFacts(
-        incident_name="Naive Test",
-        rev_impact_per_hour=100.0,
+        incident_name="SEC Eastern Time & Holiday Test",
+        rev_impact_per_hour=1000.0,
         downtime_hours=1.0,
         records_exposed=10,
-        determination_time=det_time_naive
+        determination_time=det
     )
     profile = EntityProfile(annual_revenue=100_000_000.0, is_sec_registrant=True)
-    assessment = IncidentMaterialityScreen(facts, profile)
-    try:
-        assessment.screen()
-        assert False, "Should have raised ValueError on naive datetime"
-    except ValueError as e:
-        assert "must be timezone-aware" in str(e)
+    screen = IncidentMaterialityScreen(facts, profile, holidays=vets_day).screen()
+    sec = next(r for r in screen["regulatory_regimes"] if "SEC" in r["regime"])
+    assert sec["filing_due_date"] == "2026-11-12"
+
+def test_sec_due_date_default_federal_holidays():
+    """Validates that default holiday calendar automatically includes US Federal holidays (e.g. Veterans Day)."""
+    ET = ZoneInfo("America/New_York")
+    det = datetime(2026, 11, 5, 21, 0, tzinfo=ET)
+    facts = IncidentFacts(
+        incident_name="SEC Default Holiday Test",
+        rev_impact_per_hour=1000.0,
+        downtime_hours=1.0,
+        records_exposed=10,
+        determination_time=det
+    )
+    profile = EntityProfile(annual_revenue=100_000_000.0, is_sec_registrant=True)
+    screen = IncidentMaterialityScreen(facts, profile).screen()
+    sec = next(r for r in screen["regulatory_regimes"] if "SEC" in r["regime"])
+    assert sec["filing_due_date"] == "2026-11-12"
+
+def test_rejects_naive_datetime_on_all_fields():
+    """Verifies that _validate() strictly rejects naive datetimes on all four datetime attributes."""
+    for field_name in ("discovery_time", "awareness_time", "determination_time", "dora_classification_time"):
+        kwargs = {
+            "incident_name": "Naive Test",
+            "rev_impact_per_hour": 100.0,
+            "downtime_hours": 1.0,
+            "records_exposed": 10
+        }
+        kwargs[field_name] = datetime(2026, 11, 6, 12, 0) # naive datetime!
+        facts = IncidentFacts(**kwargs)
+        profile = EntityProfile(annual_revenue=100_000_000.0, is_sec_registrant=True, is_dora_entity=True, is_nis2_entity=True)
+        try:
+            IncidentMaterialityScreen(facts, profile)
+            assert False, f"Expected ValueError for naive datetime in {field_name}"
+        except ValueError as e:
+            assert "must be timezone-aware" in str(e)
 
 def test_dora_late_classification():
+    """Under EU DORA RTS, if classification occurs after 24h of awareness, initial notification is due within 4h of classification."""
     now = datetime(2026, 11, 1, 12, 0, tzinfo=timezone.utc)
     awareness = now
-    classification = now + timedelta(hours=30) # classified at 30h (> 24h outer)
+    classification = now + timedelta(hours=30) # classified at 30h (> 24h outer limit)
     facts = IncidentFacts(
         incident_name="DORA Incident Test",
         rev_impact_per_hour=5000.0,
@@ -139,9 +204,11 @@ def test_dora_late_classification():
 if __name__ == '__main__':
     test_fair_engine_reproducibility()
     test_fair_portfolio_event_accumulation()
+    test_fair_simulated_mean_matches_analytic_expectation()
     test_vendor_evaluator_tier_scaling()
     test_vendor_evaluator_finding_generation()
-    test_sec_due_date_eastern_time()
-    test_sec_rejects_naive_datetime()
+    test_sec_due_date_uses_eastern_time_and_holidays()
+    test_sec_due_date_default_federal_holidays()
+    test_rejects_naive_datetime_on_all_fields()
     test_dora_late_classification()
-    print("All 7 portfolio unit tests passed successfully!")
+    print("All 9 portfolio unit tests passed successfully!")

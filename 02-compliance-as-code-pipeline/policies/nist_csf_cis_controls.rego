@@ -2,7 +2,7 @@ package terraform.compliance
 
 # Terraform plan compliance gate.
 #   terraform plan -out=tfplan && terraform show -json tfplan > plan.json
-#   opa eval -f pretty -i plan.json -d nist_csf_cis_controls.rego "data.terraform.compliance"
+#   opa eval -f pretty -i plan.json -d policies/nist_csf_cis_controls.rego "data.terraform.compliance"
 #
 # Works on OPA 0.59+ and 1.x (`import rego.v1`).
 # Control IDs: CIS Controls v8 and NIST CSF 2.0 (PR.AA / PR.DS / PR.IR).
@@ -27,7 +27,7 @@ allow if count(deny) == 0
 # ---------------------------------------------------------------------------
 
 # Resources that will exist after apply. Deleted resources have change.after == null
-# and must not be evaluated .
+# and must not be evaluated.
 live_resources contains r if {
 	some r in input.resource_changes
 	r.mode == "managed"
@@ -39,7 +39,7 @@ to_list(x) := x if is_array(x)
 to_list(x) := [x] if not is_array(x)
 
 # ---------------------------------------------------------------------------
-# Fail closed on malformed input 
+# Fail closed on malformed input
 # ---------------------------------------------------------------------------
 deny contains msg if {
 	not input.format_version

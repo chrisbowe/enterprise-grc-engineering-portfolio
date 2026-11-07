@@ -13,7 +13,7 @@ Model, per simulated year
                      magnitude ~ PERT(...)
   Annual loss = sum of the N independent per-event losses.
 
-Scenario JSON (list of objects). Same keys as before; two optional extras:
+Scenario JSON Schema (list of objects):
   id, name, asset, threat_community
   threat_event_frequency_range : [min, mode, max]   events / year
   vulnerability_prob           : 0..1  OR  [min, mode, max] within 0..1  (optional range)

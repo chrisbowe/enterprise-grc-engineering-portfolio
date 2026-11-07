@@ -66,10 +66,10 @@ class IncidentFacts:
     records_exposed: int
     critical_service_down: bool = False
     qualitative_factors: Dict[str, bool] = field(default_factory=dict)
-    awareness_time: Optional[datetime] = None          # when the entity became aware
+    discovery_time: Optional[datetime] = None          # when incident was discovered (SEC delay clock)
+    awareness_time: Optional[datetime] = None          # when entity became aware (DORA / NIS2 clock)
     determination_time: Optional[datetime] = None      # when materiality WAS DETERMINED (SEC clock)
     dora_classification_time: Optional[datetime] = None  # when classified major (DORA clock)
-
 
 @dataclass
 class EntityProfile:
@@ -81,7 +81,62 @@ class EntityProfile:
     nis2_significant_incident: Optional[bool] = None   # None = not yet assessed
 
 
-def add_business_days(start: date, days: int, holidays=frozenset()) -> date:
+# ---------------------------------------------------------------------------
+# US Federal Holidays (5 U.S.C. 6103) & Business Day Calendar
+# ---------------------------------------------------------------------------
+def _nth_weekday_of_month(year: int, month: int, weekday: int, n: int) -> date:
+    d = date(year, month, 1)
+    days_ahead = (weekday - d.weekday()) % 7
+    d += timedelta(days=days_ahead)
+    return d + timedelta(weeks=n - 1)
+
+def _last_weekday_of_month(year: int, month: int, weekday: int) -> date:
+    if month == 12:
+        d = date(year + 1, 1, 1) - timedelta(days=1)
+    else:
+        d = date(year, month + 1, 1) - timedelta(days=1)
+    days_behind = (d.weekday() - weekday) % 7
+    return d - timedelta(days=days_behind)
+
+def _observe(d: date) -> date:
+    if d.weekday() == 5:    # Saturday -> Friday
+        return d - timedelta(days=1)
+    elif d.weekday() == 6:  # Sunday -> Monday
+        return d + timedelta(days=1)
+    return d
+
+def get_us_federal_holidays(year: int) -> set:
+    h = set()
+    h.add(_observe(date(year, 1, 1)))                  # New Year's Day
+    h.add(_nth_weekday_of_month(year, 1, 0, 3))        # Martin Luther King Jr. Day (3rd Mon Jan)
+    h.add(_nth_weekday_of_month(year, 2, 0, 3))        # Washington's Birthday (3rd Mon Feb)
+    h.add(_last_weekday_of_month(year, 5, 0))          # Memorial Day (last Mon May)
+    h.add(_observe(date(year, 6, 19)))                 # Juneteenth (June 19)
+    h.add(_observe(date(year, 7, 4)))                  # Independence Day (July 4)
+    h.add(_nth_weekday_of_month(year, 9, 0, 1))        # Labor Day (1st Mon Sep)
+    h.add(_nth_weekday_of_month(year, 10, 0, 2))       # Columbus Day (2nd Mon Oct)
+    h.add(_observe(date(year, 11, 11)))                # Veterans Day (Nov 11)
+    h.add(_nth_weekday_of_month(year, 11, 3, 4))       # Thanksgiving Day (4th Thu Nov)
+    h.add(_observe(date(year, 12, 25)))                # Christmas Day (Dec 25)
+    return h
+
+def default_us_holidays(years=None) -> frozenset:
+    """Returns US federal holidays for the given years (defaults to surrounding 7 years)."""
+    if years is None:
+        cy = date.today().year
+        years = range(cy - 2, cy + 5)
+    try:
+        import holidays as pyholidays
+        return frozenset(pyholidays.country_holidays("US", years=years).keys())
+    except ImportError:
+        h = set()
+        for y in years:
+            h.update(get_us_federal_holidays(y))
+        return frozenset(h)
+
+def add_business_days(start: date, days: int, holidays: Optional[frozenset] = None) -> date:
+    if holidays is None:
+        holidays = default_us_holidays()
     d = start
     while days > 0:
         d += timedelta(days=1)
@@ -91,18 +146,17 @@ def add_business_days(start: date, days: int, holidays=frozenset()) -> date:
 
 
 
-def _require_tz(dt: Optional[datetime], name: str):
-    if dt is not None and dt.tzinfo is None:
-        raise ValueError(f"{name} must be timezone-aware (pass a tz-aware datetime)")
-
 def _iso(dt: Optional[datetime]) -> Optional[str]:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if dt else None
 
 
 class IncidentMaterialityScreen:
     def __init__(self, facts: IncidentFacts, profile: EntityProfile,
-                 assumptions: Optional[Assumptions] = None, holidays=frozenset()):
-        self.f, self.p, self.a, self.holidays = facts, profile, assumptions or Assumptions(), holidays
+                 assumptions: Optional[Assumptions] = None, holidays: Optional[frozenset] = None):
+        self.f = facts
+        self.p = profile
+        self.a = assumptions or Assumptions()
+        self.holidays = default_us_holidays() if holidays is None else frozenset(holidays)
         self._validate()
 
     def _validate(self):
@@ -114,6 +168,17 @@ class IncidentMaterialityScreen:
         unknown = set(self.f.qualitative_factors) - set(SEC_QUALITATIVE_FACTORS)
         if unknown:
             raise ValueError(f"Unknown qualitative factors {sorted(unknown)}; allowed: {SEC_QUALITATIVE_FACTORS}")
+
+        # Validate timezone awareness on all four datetime fields
+        for dt_name in ("discovery_time", "awareness_time", "determination_time", "dora_classification_time"):
+            dt_val = getattr(self.f, dt_name, None)
+            if dt_val is not None:
+                if not isinstance(dt_val, datetime):
+                    raise TypeError(f"{dt_name} must be a datetime instance, got {type(dt_val).__name__}")
+                if dt_val.tzinfo is None:
+                    raise ValueError(f"{dt_name} must be timezone-aware (pass a tz-aware datetime)")
+
+
 
     # ------------------------------------------------------------ screening
     def screen(self):
@@ -160,7 +225,6 @@ class IncidentMaterialityScreen:
         if p.is_sec_registrant:
             due = None
             if f.determination_time:
-                _require_tz(f.determination_time, "determination_time")
                 ny_date = f.determination_time.astimezone(ZoneInfo("America/New_York")).date()
                 due = add_business_days(ny_date, 4, self.holidays).isoformat()
             regimes.append({
@@ -182,8 +246,6 @@ class IncidentMaterialityScreen:
                                        "intermediate report within 72h of the initial notification; final report within one month "
                                        "after the latest intermediate report.")
                 if f.awareness_time:
-                    _require_tz(f.awareness_time, "awareness_time")
-                    _require_tz(f.dora_classification_time, "dora_classification_time")
                     outer = f.awareness_time + timedelta(hours=24)
                     inner = f.dora_classification_time + timedelta(hours=4) if f.dora_classification_time else None
                     if inner and f.dora_classification_time > outer:
