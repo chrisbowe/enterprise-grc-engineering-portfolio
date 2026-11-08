@@ -23,8 +23,9 @@ Regulatory references (verify against current text before relying on them)
 * SEC: Form 8-K Item 1.05 - file within four business days after the registrant
   determines the incident is material; determination must be made without unreasonable
   delay after discovery. Delay only on a U.S. Attorney General national-security /
-  public-safety determination. Business-day count here skips weekends only; pass
-  `holidays` for U.S. federal holidays.
+  public-safety determination. Business-day count automatically excludes weekends
+  and U.S. federal holidays (5 U.S.C. 6103) evaluated in Eastern Time; custom
+  holiday sets may also be passed.
 * DORA (Reg. (EU) 2022/2554; classification RTS (EU) 2024/1772; reporting RTS (EU) 2025/301):
   for incidents classified as MAJOR: initial notification within 4 hours of classification
   and no later than 24 hours after becoming aware; intermediate report within 72 hours of
@@ -71,6 +72,7 @@ class IncidentFacts:
     determination_time: Optional[datetime] = None      # when materiality WAS DETERMINED (SEC clock)
     dora_classification_time: Optional[datetime] = None  # when classified major (DORA clock)
 
+
 @dataclass
 class EntityProfile:
     annual_revenue: float
@@ -90,6 +92,7 @@ def _nth_weekday_of_month(year: int, month: int, weekday: int, n: int) -> date:
     d += timedelta(days=days_ahead)
     return d + timedelta(weeks=n - 1)
 
+
 def _last_weekday_of_month(year: int, month: int, weekday: int) -> date:
     if month == 12:
         d = date(year + 1, 1, 1) - timedelta(days=1)
@@ -98,6 +101,7 @@ def _last_weekday_of_month(year: int, month: int, weekday: int) -> date:
     days_behind = (d.weekday() - weekday) % 7
     return d - timedelta(days=days_behind)
 
+
 def _observe(d: date) -> date:
     if d.weekday() == 5:    # Saturday -> Friday
         return d - timedelta(days=1)
@@ -105,9 +109,23 @@ def _observe(d: date) -> date:
         return d + timedelta(days=1)
     return d
 
+
 def get_us_federal_holidays(year: int) -> set:
+    """
+    Returns US federal holidays observed in the specified calendar year (5 U.S.C. 6103).
+    All returned dates have d.year == year.
+    Correctly includes Dec 31 when Jan 1 of year+1 falls on a Saturday.
+    """
     h = set()
-    h.add(_observe(date(year, 1, 1)))                  # New Year's Day
+    # New Year's Day for this year (if not observed in the preceding year)
+    ny = _observe(date(year, 1, 1))
+    if ny.year == year:
+        h.add(ny)
+    # Next year's New Year's Day if observed on Dec 31 of this year (when Jan 1 falls on Saturday)
+    ny_next = _observe(date(year + 1, 1, 1))
+    if ny_next.year == year:
+        h.add(ny_next)
+
     h.add(_nth_weekday_of_month(year, 1, 0, 3))        # Martin Luther King Jr. Day (3rd Mon Jan)
     h.add(_nth_weekday_of_month(year, 2, 0, 3))        # Washington's Birthday (3rd Mon Feb)
     h.add(_last_weekday_of_month(year, 5, 0))          # Memorial Day (last Mon May)
@@ -119,6 +137,7 @@ def get_us_federal_holidays(year: int) -> set:
     h.add(_nth_weekday_of_month(year, 11, 3, 4))       # Thanksgiving Day (4th Thu Nov)
     h.add(_observe(date(year, 12, 25)))                # Christmas Day (Dec 25)
     return h
+
 
 def default_us_holidays(years=None) -> frozenset:
     """Returns US federal holidays for the given years (defaults to surrounding 7 years)."""
@@ -134,6 +153,7 @@ def default_us_holidays(years=None) -> frozenset:
             h.update(get_us_federal_holidays(y))
         return frozenset(h)
 
+
 def add_business_days(start: date, days: int, holidays: Optional[frozenset] = None) -> date:
     if holidays is None:
         holidays = default_us_holidays()
@@ -143,7 +163,6 @@ def add_business_days(start: date, days: int, holidays: Optional[frozenset] = No
         if d.weekday() < 5 and d not in holidays:
             days -= 1
     return d
-
 
 
 def _iso(dt: Optional[datetime]) -> Optional[str]:
@@ -178,7 +197,10 @@ class IncidentMaterialityScreen:
                 if dt_val.tzinfo is None:
                     raise ValueError(f"{dt_name} must be timezone-aware (pass a tz-aware datetime)")
 
-
+        # Validate that determination_time cannot precede discovery_time
+        if self.f.discovery_time and self.f.determination_time:
+            if self.f.determination_time < self.f.discovery_time:
+                raise ValueError("determination_time cannot precede discovery_time")
 
     # ------------------------------------------------------------ screening
     def screen(self):
@@ -227,13 +249,27 @@ class IncidentMaterialityScreen:
             if f.determination_time:
                 ny_date = f.determination_time.astimezone(ZoneInfo("America/New_York")).date()
                 due = add_business_days(ny_date, 4, self.holidays).isoformat()
-            regimes.append({
+            
+            sec_entry = {
                 "regime": "SEC Form 8-K Item 1.05",
                 "test": "Registrant determines the incident is MATERIAL (decision by registrant, not this tool).",
                 "obligation": "File Item 1.05 8-K within four business days after the materiality determination.",
                 "filing_due_date": due or "Clock starts at the determination: record the determination timestamp.",
                 "also": "Determination must be made without unreasonable delay after discovery.",
-            })
+            }
+
+            if f.discovery_time:
+                sec_entry["discovery_time"] = _iso(f.discovery_time)
+                if f.determination_time:
+                    delta = f.determination_time - f.discovery_time
+                    days = delta.days
+                    hours = delta.seconds // 3600
+                    mins = (delta.seconds % 3600) // 60
+                    sec_entry["discovery_to_determination_elapsed"] = f"{days}d {hours}h {mins}m"
+                else:
+                    sec_entry["discovery_to_determination_status"] = "Determination pending without unreasonable delay."
+
+            regimes.append(sec_entry)
 
         if p.is_dora_entity:
             entry = {"regime": "EU DORA major-incident reporting",
@@ -253,6 +289,10 @@ class IncidentMaterialityScreen:
                     else:
                         initial_due = min(outer, inner) if inner else outer
                     entry["initial_notification_due"] = _iso(initial_due)
+                elif f.dora_classification_time:
+                    entry["status_note"] = "awareness_time not recorded; unable to assess the 24-hour outer limit against the 4-hour post-classification deadline."
+                else:
+                    entry["status_note"] = "Record awareness_time to track the DORA initial notification deadline."
             else:
                 entry["status"] = "Classified NOT major - no DORA major-incident notification; keep records."
             regimes.append(entry)
@@ -325,6 +365,7 @@ if __name__ == "__main__":
         records_exposed=140_000,
         critical_service_down=True,
         qualitative_factors={"reputational_harm": True, "litigation_or_regulatory_action_likely": True},
+        discovery_time=now - timedelta(hours=14),
         awareness_time=now - timedelta(hours=6),
         determination_time=now,
     )

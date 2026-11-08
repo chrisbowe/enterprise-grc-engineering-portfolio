@@ -33,7 +33,7 @@ This repository provides four complete, hands-on engineering labs designed to so
 * **Stack:** Open Policy Agent (OPA), Rego v1, Terraform (IaC Plan Fixtures), GitHub Actions
 * **Standards:** NIST CSF 2.0, CIS Critical Security Controls v8 (Controls 3, 6, 12)
 * **Problem:** Cloud misconfigurations often bypass manual reviews, causing compliance drift between annual audit cycles.
-* **Solution:** A shift-left CI/CD policy-as-code gate unit-tested against Terraform plan fixtures. Includes sample Terraform configuration (`main.tf`) and mock plan fixtures demonstrating how CI gates enforce explicit S3 encryption configuration (CIS 3.11 / NIST PR.DS-01), restrict public IP exposure with tag-based exceptions (CIS 12.2 / NIST PR.IR-01), and require MFA on wildcard IAM admin policies (CIS 6.5 / NIST PR.AA-03/05).
+* **Solution:** A shift-left CI/CD policy-as-code gate unit-tested against Terraform plan fixtures. Includes sample Terraform configuration (`main.tf`) and hand-crafted mock plan fixtures (evaluated in CI without requiring live cloud credentials) demonstrating how CI gates enforce explicit S3 encryption configuration (CIS 3.11 / NIST PR.DS-01), restrict public IP exposure with tag-based exceptions (CIS 12.2 / NIST PR.IR-01), and require MFA on wildcard IAM admin policies (CIS 6.5 / NIST PR.AA-03/05).
 
 ### Lab 3: Third-Party Risk Management (TPRM) Scoring Engine
 * **Directory:** [`./03-third-party-risk-tprm-scoring`](./03-third-party-risk-tprm-scoring)
