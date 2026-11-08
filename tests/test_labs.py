@@ -477,6 +477,32 @@ def test_dora_classification_without_awareness_status_note():
     assert "awareness_time not recorded" in dora["status_note"]
 
 
+def test_holiday_window_anchoring_independent_of_current_year():
+    """
+    Verifies that business day calculations anchor the holiday calendar to the
+    incident/determination facts rather than execution year, preventing test regressions
+    in future calendar years (e.g., 2029+).
+    """
+    # 2021 test: Veterans Day (Thursday, Nov 11, 2021) observed on Thursday Nov 11.
+    # Start: Wednesday Nov 10, 2021.
+    # Day 1: Fri Nov 12 (skips Thu Nov 11 Veterans Day)
+    # Day 2: Mon Nov 15 (skips Sat Nov 13, Sun Nov 14)
+    # Day 3: Tue Nov 16
+    # Day 4: Wed Nov 17
+    det_2021 = datetime(2021, 11, 10, 10, 0, tzinfo=ZoneInfo("America/New_York"))
+    facts_2021 = IncidentFacts(
+        incident_name="Historical 2021 Incident",
+        rev_impact_per_hour=500000.0,
+        downtime_hours=5.0,
+        records_exposed=10000,
+        determination_time=det_2021
+    )
+    profile = EntityProfile(annual_revenue=10_000_000.0, is_sec_registrant=True)
+    screen_2021 = IncidentMaterialityScreen(facts_2021, profile).screen()
+    sec_regime = next(r for r in screen_2021["regulatory_regimes"] if "SEC" in r["regime"])
+    assert sec_regime["filing_due_date"] == "2021-11-17"
+
+
 if __name__ == '__main__':
     test_fair_engine_reproducibility()
     test_fair_portfolio_event_accumulation()
@@ -491,8 +517,9 @@ if __name__ == '__main__':
     test_sec_discovery_to_determination_reporting_and_validation()
     test_fallback_us_federal_holidays_2026_and_2027()
     test_holiday_library_cross_check_2026_to_2028()
+    test_holiday_window_anchoring_independent_of_current_year()
     test_rejects_naive_datetime_on_all_fields()
     test_dora_classification_within_24h_normal_and_capped_paths()
     test_dora_late_classification()
     test_dora_classification_without_awareness_status_note()
-    print("All 17 portfolio unit tests passed successfully!")
+    print("All 18 portfolio unit tests passed successfully!")

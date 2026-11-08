@@ -1,5 +1,5 @@
 # Enterprise GRC & Cybersecurity Engineering Portfolio
-# Requires Python 3.10+ (tested on Python 3.12 and 3.14)
+# Requires Python 3.10+ (tested in CI on Python 3.10, 3.11, and 3.12; compatible through Python 3.14)
 numpy>=1.24.0,<3.0.0
 pytest>=7.4.0,<10.0.0
 tzdata>=2024.1

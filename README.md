@@ -54,7 +54,7 @@ This repository provides four complete, hands-on engineering labs designed to so
 
 ## ⚙️ Quick Start
 
-**Prerequisites:** Python 3.10 or later (Python 3.12 recommended; requires standard library `zoneinfo`; Windows systems require `tzdata` installed via `requirements.txt`).
+**Prerequisites:** Python 3.10 or later (tested in CI on Python 3.10, 3.11, and 3.12; compatible through Python 3.14; requires standard library `zoneinfo`; Windows systems require `tzdata` installed via `requirements.txt`).
 
 Clone this repository and explore any lab:
 

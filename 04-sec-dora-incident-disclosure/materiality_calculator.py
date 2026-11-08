@@ -23,7 +23,7 @@ Timestamp Definitions across Regulatory Regimes
 * `discovery_time` (SEC Item 1.05): When the registrant first detects or discovers technical
   evidence that a cybersecurity incident has occurred. Triggers the obligation to reach a
   materiality determination "without unreasonable delay."
-* `awareness_time` (EU DORA Art. 19(4) & RTS (EU) 2025/301 Art. 6): When the financial entity
+* `awareness_time` (EU DORA Art. 19(4) & RTS (EU) 2025/301 Art. 5): When the financial entity
   becomes aware of the ICT-related incident itself (prior to and independent of whether it is
   major). Starts the 24-hour outer limit for submitting the initial notification.
 * `dora_classification_time` (DORA RTS (EU) 2024/1772): When the entity classifies the incident
@@ -47,9 +47,11 @@ Regulatory references (verify against current text before relying on them)
   for incidents classified as MAJOR: initial notification within 4 hours of classification
   and no later than 24 hours after becoming aware of the incident; intermediate report within
   72 hours of the initial notification; final report within one month after the latest intermediate
-  report. Applies to in-scope EU financial entities only. Timelines run continuously on 24/7 UTC
-  clocks (earlier draft commentary discussing rolling weekend/holiday deadlines to noon the next
-  business day is not modeled here; align local supervisory procedures with counsel).
+  report (Article 5). Applies to in-scope EU financial entities only.
+  Weekend/bank-holiday relief (RTS 2025/301 Art. 5(4)-(6)) is NOT modeled: where permitted, a deadline
+  falling on a weekend or Member State bank holiday may be met by noon of the next working day. It is
+  unavailable to credit institutions, CCPs, trading venues and NIS2 essential/important entities for
+  initial and intermediate reports (Art. 5(5)), and authorities may disapply it for significant entities (Art. 5(6)).
 * NIS2 (Directive (EU) 2022/2555): for SIGNIFICANT incidents: early warning within 24 hours of
   awareness of significance; incident notification within 72 hours; final report within one month
   of the incident notification. DORA is the sector-specific regime for financial entities and
@@ -59,7 +61,7 @@ Regulatory references (verify against current text before relying on them)
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-from typing import Dict, Optional
+from typing import Dict, Optional, Union, Iterable
 
 # Qualitative factors named in the SEC's adopting release for Item 1.05.
 SEC_QUALITATIVE_FACTORS = (
@@ -158,11 +160,16 @@ def get_us_federal_holidays(year: int) -> set:
     return h
 
 
-def default_us_holidays(years=None) -> frozenset:
-    """Returns US federal holidays for the given years (defaults to surrounding 7 years)."""
+def default_us_holidays(years: Optional[Union[int, Iterable[int]]] = None) -> frozenset:
+    """
+    Returns US federal holidays for the given years (iterable or single year).
+    If omitted, defaults to surrounding 4 years of the current calendar year.
+    """
     if years is None:
         cy = date.today().year
-        years = range(cy - 2, cy + 5)
+        years = range(cy - 1, cy + 3)
+    elif isinstance(years, int):
+        years = [years]
     try:
         import holidays as pyholidays
         return frozenset(pyholidays.country_holidays("US", years=years).keys())
@@ -175,7 +182,8 @@ def default_us_holidays(years=None) -> frozenset:
 
 def add_business_days(start: date, days: int, holidays: Optional[frozenset] = None) -> date:
     if holidays is None:
-        holidays = default_us_holidays()
+        # Dynamically anchor holiday calendar window to the start date
+        holidays = default_us_holidays(range(start.year - 1, start.year + 2))
     d = start
     while days > 0:
         d += timedelta(days=1)
@@ -194,7 +202,13 @@ class IncidentMaterialityScreen:
         self.f = facts
         self.p = profile
         self.a = assumptions or Assumptions()
-        self.holidays = default_us_holidays() if holidays is None else frozenset(holidays)
+        if holidays is not None:
+            self.holidays = frozenset(holidays)
+        else:
+            # Anchor holiday window to the determination date or incident facts, avoiding dependency on execution year
+            ref_dt = self.f.determination_time or self.f.discovery_time or self.f.awareness_time
+            anchor_year = ref_dt.year if ref_dt else date.today().year
+            self.holidays = default_us_holidays(range(anchor_year - 1, anchor_year + 3))
         self._validate()
 
     def _validate(self):
@@ -300,7 +314,7 @@ class IncidentMaterialityScreen:
             elif p.dora_major_incident:
                 entry["obligation"] = ("Initial notification within 4h of classification and no later than 24h after awareness of the incident; "
                                        "intermediate report within 72h of the initial notification; final report within one month "
-                                       "after the latest intermediate report.")
+                                       "after the latest intermediate report (RTS 2025/301 Art. 5).")
                 if f.awareness_time:
                     outer = f.awareness_time + timedelta(hours=24)
                     inner = f.dora_classification_time + timedelta(hours=4) if f.dora_classification_time else None
