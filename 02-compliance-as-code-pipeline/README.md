@@ -3,7 +3,7 @@
 ## 📌 Overview
 This lab demonstrates how to operationalize **Continuous Assurance** by embedding regulatory compliance and security benchmarks directly into the software development lifecycle (SDLC).
 
-Using **Open Policy Agent (OPA)** and **Rego v1**, infrastructure-as-code (Terraform) changes are programmatically evaluated against **NIST CSF 2.0** and **CIS Critical Security Controls v8** before any cloud resources can be provisioned.
+Using **Open Policy Agent (OPA)** and **Rego v1**, compliance guardrails are **unit-tested against Terraform plan fixtures** to validate infrastructure configurations against **NIST CSF 2.0** and **CIS Critical Security Controls v8**.
 
 ## 🛡️ Enforced Controls
 * **CIS Control 3.11 / NIST CSF 2.0 PR.DS-01:** S3 Bucket Server-Side Encryption (enforces explicit, auditable server-side encryption configuration on all S3 buckets; supports both modern dedicated `aws_s3_bucket_server_side_encryption_configuration` and legacy inline blocks).
@@ -11,7 +11,33 @@ Using **Open Policy Agent (OPA)** and **Rego v1**, infrastructure-as-code (Terra
 * **CIS Control 6.5 / NIST CSF 2.0 PR.AA-03, PR.AA-05:** Identity Least Privilege & MFA (enforces MFA condition blocks on wildcard administrative IAM policies).
 
 ## 🚀 How It Works
-1. Infrastructure-as-Code (`main.tf`) models compliant enterprise resources (such as dedicated KMS encryption configurations and private compute nodes).
-2. The CI pipeline runs OPA policy tests against hand-crafted, mock Terraform plan JSON fixtures (`plan_compliant.json`, `plan_noncompliant.json`, `plan_malformed.json`). This ensures deterministic testing of both approval and rejection paths without requiring live AWS credentials.
-3. OPA evaluates the planned changes against `policies/nist_csf_cis_controls.rego` (`run_policy_tests.sh`).
-4. If policy violations or malformed plan structures are detected, the pipeline fails closed, blocking deployment and outputting specific remediation findings.
+
+### 1. Unit Testing in CI (This Repository)
+The CI pipeline runs OPA policy tests against hand-crafted, mock Terraform plan JSON fixtures (`plan_compliant.json`, `plan_noncompliant.json`, `plan_malformed.json`). This ensures deterministic testing of both approval and rejection paths without requiring live AWS credentials or cloud provider interaction:
+```bash
+# Run unit tests across all policy fixtures
+cd 02-compliance-as-code-pipeline
+bash run_policy_tests.sh
+```
+
+### 2. Enforcing in a Real Production Pipeline
+In an enterprise deployment workflow, the policy gate is embedded into CI/CD prior to applying infrastructure changes:
+```bash
+# 1. Generate machine-readable plan JSON
+terraform plan -out=tfplan
+terraform show -json tfplan > plan.json
+
+# 2. Evaluate plan against Rego compliance guardrails and fail on any violation
+opa eval -i plan.json -d policies/ --fail-defined 'data.terraform.compliance.deny[_]'
+```
+
+### 3. Reference Infrastructure (`main.tf`)
+`main.tf` provides reference Terraform configurations modeling compliant enterprise patterns:
+* Dedicated KMS Customer Managed Key (`aws_kms_key`) with automated 30-day rotation.
+* Dedicated S3 bucket encryption resource (`aws_s3_bucket_server_side_encryption_configuration`) referencing the KMS key.
+* Private internal EC2 analytics worker node (`associate_public_ip_address = false`) with dynamic AMI lookup.
+
+## ⚠️ Known Limitations (Documented Guardrail Boundaries)
+* **IAM Scope:** Checks full administrative privileges (`*` action on `*` resource). Service-level wildcards (`iam:*`), `NotAction`, and AWS managed policy attachments are not currently evaluated.
+* **Child Modules:** The S3 encryption cross-reference evaluates root-module configurations. Buckets defined inside child modules whose encryption resource lives within that child module fail closed.
+* **Public IP Coverage:** Applies to `aws_instance`, `aws_launch_template`, and `aws_subnet`. Intentional public egress/ingress resources (e.g. NAT gateways, public bastions) must include the exception tag `compliance:public-ip-approved = "true"`.

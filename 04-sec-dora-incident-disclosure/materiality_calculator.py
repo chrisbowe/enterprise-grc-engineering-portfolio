@@ -17,6 +17,15 @@ IMPORTANT - what this tool is and is not
   multiplier on cost.
 * Cost inputs are PLACEHOLDERS. Replace `fixed_response_cost` and `cost_per_record`
   with figures you can source (e.g., your own incident history or a cited breach-cost study).
+* Discovery vs. Awareness Timestamps:
+  - `discovery_time` (SEC): When technical evidence or indicators of an incident are first
+    detected. The SEC requires determination to be made "without unreasonable delay"
+    following discovery.
+  - `awareness_time` (DORA / NIS2): When the entity reaches a reasonable degree of certainty
+    that a major/significant ICT disruption has occurred, starting the 24-hour initial
+    notification / early warning clock.
+  - While technical discovery and institutional awareness often coincide in practice, any
+    discrepancy should be documented and reviewed with counsel.
 
 Regulatory references (verify against current text before relying on them)
 -------------------------------------------------------------------------
@@ -114,6 +123,7 @@ def get_us_federal_holidays(year: int) -> set:
     """
     Returns US federal holidays observed in the specified calendar year (5 U.S.C. 6103).
     All returned dates have d.year == year.
+    Includes both actual calendar dates and observed business dates.
     Correctly includes Dec 31 when Jan 1 of year+1 falls on a Saturday.
     """
     h = set()
@@ -126,6 +136,14 @@ def get_us_federal_holidays(year: int) -> set:
     if ny_next.year == year:
         h.add(ny_next)
 
+    # Actual calendar dates for fixed-date holidays
+    h.add(date(year, 1, 1))
+    h.add(date(year, 6, 19))
+    h.add(date(year, 7, 4))
+    h.add(date(year, 11, 11))
+    h.add(date(year, 12, 25))
+
+    # Observed floating and fixed federal holidays
     h.add(_nth_weekday_of_month(year, 1, 0, 3))        # Martin Luther King Jr. Day (3rd Mon Jan)
     h.add(_nth_weekday_of_month(year, 2, 0, 3))        # Washington's Birthday (3rd Mon Feb)
     h.add(_last_weekday_of_month(year, 5, 0))          # Memorial Day (last Mon May)
@@ -249,7 +267,7 @@ class IncidentMaterialityScreen:
             if f.determination_time:
                 ny_date = f.determination_time.astimezone(ZoneInfo("America/New_York")).date()
                 due = add_business_days(ny_date, 4, self.holidays).isoformat()
-            
+
             sec_entry = {
                 "regime": "SEC Form 8-K Item 1.05",
                 "test": "Registrant determines the incident is MATERIAL (decision by registrant, not this tool).",
@@ -367,7 +385,7 @@ if __name__ == "__main__":
         critical_service_down=True,
         qualitative_factors={"reputational_harm": True, "litigation_or_regulatory_action_likely": True},
         discovery_time=now - timedelta(hours=14),
-        awareness_time=now - timedelta(hours=6),
+        awareness_time=now - timedelta(hours=14),
         determination_time=now,
     )
     profile = EntityProfile(annual_revenue=100_000_000, is_sec_registrant=True)
