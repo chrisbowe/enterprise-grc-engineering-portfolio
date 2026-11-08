@@ -384,7 +384,7 @@ def test_holiday_library_cross_check_2026_to_2028():
 
 
 def test_rejects_naive_datetime_on_all_fields():
-    """Verifies that _validate() strictly rejects naive datetimes on all four datetime attributes."""
+    """Verifies that _validate() strictly rejects naive datetimes and non-datetime types on all four datetime attributes."""
     for field_name in ("discovery_time", "awareness_time", "determination_time", "dora_classification_time"):
         kwargs = {
             "incident_name": "Naive Test",
@@ -400,6 +400,15 @@ def test_rejects_naive_datetime_on_all_fields():
             assert False, f"Expected ValueError for naive datetime in {field_name}"
         except ValueError as e:
             assert "must be timezone-aware" in str(e)
+
+        # Non-datetime rejection: ensures _validate() executes before __init__ reads .year
+        kwargs[field_name] = "2026-11-06T12:00:00Z"
+        facts_str = IncidentFacts(**kwargs)
+        try:
+            IncidentMaterialityScreen(facts_str, profile)
+            assert False, f"Expected TypeError for string passed to {field_name}"
+        except TypeError as e:
+            assert "must be a datetime instance" in str(e)
 
 
 def test_dora_classification_within_24h_normal_and_capped_paths():

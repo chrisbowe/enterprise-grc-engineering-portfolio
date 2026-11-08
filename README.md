@@ -1,5 +1,7 @@
 # Enterprise Cybersecurity & GRC Engineering Portfolio
 
+[![Compliance & Security Engineering CI](https://github.com/chrisbowe/enterprise-grc-engineering-portfolio/actions/workflows/policy-ci.yml/badge.svg)](https://github.com/chrisbowe/enterprise-grc-engineering-portfolio/actions/workflows/policy-ci.yml)
+
 A reference implementation demonstrating practical expertise in **Quantitative Cyber Risk Modeling (Open FAIR™)**, **Automated Compliance-as-Code Guardrails (OPA & Rego v1)**, **Tier-Scaled Third-Party Risk Management (TPRM)**, and **Regulatory Incident Materiality Screening (SEC Form 8-K & EU DORA)**.
 
 ---
@@ -48,13 +50,14 @@ This repository provides four complete, hands-on engineering labs designed to so
 * **Standards:** U.S. SEC Form 8-K (Item 1.05), EU DORA (Regulation (EU) 2022/2554 & Delegated Regulation (EU) 2025/301), EU NIS2 Directive
 * **Problem:** Stringent regulatory reporting requirements—including the U.S. SEC Form 8-K Item 1.05 (four business days after a materiality determination evaluated in US Eastern Time) and EU DORA (major incident initial notification within 4 hours of classification, 24-hour outer limit unless classified late)—require rapid, defensible incident screening.
 * **Solution:** An automated decision-support screening aid that balances direct revenue loss and response costs against qualitative indicators (critical service disruption, brand harm, mass PII exposure). Built-in business calendar logic excludes weekends and US federal holidays (5 U.S.C. 6103). Tracks distinct SEC, DORA, and NIS2 reporting timelines alongside internal escalation targets.
+* **Limitation Note:** Weekend and Member State bank-holiday relief under DORA RTS (EU) 2025/301 Art. 5(4)–(6) is unmodeled in this screening aid. Under Art. 5(5), such relief is explicitly unavailable to credit institutions, CCPs, trading venues, and NIS2 essential/important entities for initial and intermediate reports, and competent authorities may disapply it for significant entities (Art. 5(6)). Align local supervisory filing procedures with corporate legal counsel.
 * **Disclaimer:** *This screening aid provides internal decision support and does not constitute formal legal determination or legal advice. Calibrate all financial thresholds and qualitative factors with corporate legal counsel.*
 
 ---
 
 ## ⚙️ Quick Start
 
-**Prerequisites:** Python 3.10 or later (tested in CI on Python 3.10, 3.11, and 3.12; compatible through Python 3.14; requires standard library `zoneinfo`; Windows systems require `tzdata` installed via `requirements.txt`).
+**Prerequisites:** Python 3.10 or later (tested in CI on Python 3.10, 3.11, and 3.12; requires standard library `zoneinfo`; Windows systems require `tzdata` installed via `requirements.txt`).
 
 Clone this repository and explore any lab:
 

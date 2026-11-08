@@ -202,6 +202,7 @@ class IncidentMaterialityScreen:
         self.f = facts
         self.p = profile
         self.a = assumptions or Assumptions()
+        self._validate()
         if holidays is not None:
             self.holidays = frozenset(holidays)
         else:
@@ -209,7 +210,6 @@ class IncidentMaterialityScreen:
             ref_dt = self.f.determination_time or self.f.discovery_time or self.f.awareness_time
             anchor_year = ref_dt.year if ref_dt else date.today().year
             self.holidays = default_us_holidays(range(anchor_year - 1, anchor_year + 3))
-        self._validate()
 
     def _validate(self):
         for name in ("rev_impact_per_hour", "downtime_hours", "records_exposed"):
