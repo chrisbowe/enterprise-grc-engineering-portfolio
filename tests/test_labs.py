@@ -157,18 +157,29 @@ def test_vendor_evaluator_finding_generation():
 def test_vendor_soc2_recency_boundaries():
     """
     Tests exact boundary conditions for date-calculated SOC 2 recency:
-      - 364 days ago: compliant (inside 12 months)
-      - 365 days ago: compliant (exactly at 12-month boundary)
-      - 366 days ago: non-compliant (expired assurance, generates CRITICAL finding)
+      - 364 days ago: compliant across tiers
+      - 365 days ago: compliant at 12-month boundary
+      - 366 days ago: non-compliant (assurance expired > 365 days)
+      - Verifies tier-scaled finding severity:
+          Tier 1 -> CRITICAL
+          Tier 2 -> HIGH
+          Tier 3 -> MEDIUM
     """
     as_of = date(2026, 6, 1)
 
-    def make_vendor(period_end_date):
+    def make_vendor(tier_number, period_end_date):
+        data_access = {}
+        if tier_number == 1:
+            data_access = {"has_pii": True}
+        elif tier_number == 2:
+            data_access = {"has_internal_docs": True}
+        elif tier_number == 3:
+            data_access = {"employee_email_access": True}
         return {
-            "vendor_name": "CloudSaaS",
-            "vendor_id": "V-RECENCY",
+            "vendor_name": f"CloudSaaS-T{tier_number}",
+            "vendor_id": f"V-RECENCY-T{tier_number}",
             "business_owner": "CISO",
-            "data_access": {"has_pii": True},  # Tier 1 requires assurance
+            "data_access": data_access,
             "security_controls": {
                 "soc2_report_period_end": period_end_date.isoformat(),
                 "phishing_resistant_mfa_enforced": True,
@@ -178,22 +189,34 @@ def test_vendor_soc2_recency_boundaries():
         }
 
     # 364 days ago: within 12 months -> compliant
-    v_364 = make_vendor(as_of - timedelta(days=364))
-    eval_364 = VendorRiskEvaluator(v_364, as_of=as_of)
+    v1_364 = make_vendor(1, as_of - timedelta(days=364))
+    eval_364 = VendorRiskEvaluator(v1_364, as_of=as_of)
     assert len(eval_364.audit_security_controls()) == 0
 
     # 365 days ago: exactly on 365-day boundary -> compliant
-    v_365 = make_vendor(as_of - timedelta(days=365))
-    eval_365 = VendorRiskEvaluator(v_365, as_of=as_of)
+    v1_365 = make_vendor(1, as_of - timedelta(days=365))
+    eval_365 = VendorRiskEvaluator(v1_365, as_of=as_of)
     assert len(eval_365.audit_security_controls()) == 0
 
-    # 366 days ago: expired (> 365 days) -> finding generated
-    v_366 = make_vendor(as_of - timedelta(days=366))
-    eval_366 = VendorRiskEvaluator(v_366, as_of=as_of)
-    findings_366 = eval_366.audit_security_controls()
-    assert len(findings_366) == 1
-    assert findings_366[0]["control"] == "Independent Assurance (SOC 2 Type II / ISO 27001)"
-    assert "outside 12 months" in findings_366[0]["finding"]
+    # 366 days ago: expired (> 365 days) -> tier-scaled severity
+    # Tier 1 -> CRITICAL
+    v1_366 = make_vendor(1, as_of - timedelta(days=366))
+    f1 = VendorRiskEvaluator(v1_366, as_of=as_of).audit_security_controls()
+    assert len(f1) == 1
+    assert f1[0]["severity"] == "CRITICAL"
+    assert "outside 12 months" in f1[0]["finding"]
+
+    # Tier 2 -> HIGH
+    v2_366 = make_vendor(2, as_of - timedelta(days=366))
+    f2 = VendorRiskEvaluator(v2_366, as_of=as_of).audit_security_controls()
+    assert len(f2) == 1
+    assert f2[0]["severity"] == "HIGH"
+
+    # Tier 3 -> MEDIUM
+    v3_366 = make_vendor(3, as_of - timedelta(days=366))
+    f3 = VendorRiskEvaluator(v3_366, as_of=as_of).audit_security_controls()
+    assert len(f3) == 1
+    assert f3[0]["severity"] == "MEDIUM"
 
 
 # -----------------------------------------------------------------------------
@@ -242,8 +265,8 @@ def test_sec_due_date_default_federal_holidays():
 def test_sec_discovery_to_determination_reporting_and_validation():
     """
     Verifies that discovery_time is tracked, validated, and reported:
-      - When discovery_time and determination_time are both provided, elapsed time is reported.
-      - When only discovery_time is provided, 'Determination pending without unreasonable delay' is reported.
+      - When discovery_time and determination_time are both provided, elapsed time is reported for counsel review.
+      - When only discovery_time is provided, 'Determination pending; evaluate without unreasonable delay with counsel' is reported.
       - If determination_time precedes discovery_time, ValueError is raised.
     """
     ET = ZoneInfo("America/New_York")
@@ -262,6 +285,7 @@ def test_sec_discovery_to_determination_reporting_and_validation():
     screen = IncidentMaterialityScreen(facts, profile).screen()
     sec = next(r for r in screen["regulatory_regimes"] if "SEC" in r["regime"])
     assert sec["discovery_to_determination_elapsed"] == "2d 5h 30m"
+    assert "counsel review" in sec["discovery_to_determination_note"].lower()
 
     # Only discovery_time provided
     facts_pending = IncidentFacts(
@@ -297,6 +321,7 @@ def test_fallback_us_federal_holidays_2026_and_2027():
     Asserts:
       - 2026 matches the exact expected 11 federal holidays (including July 3 observed for July 4).
       - 2027 correctly includes Dec 31, 2027 (observed for New Year's Day Jan 1, 2028).
+      - 2028 does NOT duplicate Dec 31, 2027 (which strictly belongs to the 2027 calendar year).
       - All dates strictly fall within their respective calendar years.
     """
     expected_2026 = {
@@ -319,6 +344,10 @@ def test_fallback_us_federal_holidays_2026_and_2027():
     h_2027 = get_us_federal_holidays(2027)
     assert date(2027, 12, 31) in h_2027  # Jan 1, 2028 is Sat -> observed Fri Dec 31, 2027
     assert all(d.year == 2027 for d in h_2027)
+
+    h_2028 = get_us_federal_holidays(2028)
+    assert date(2027, 12, 31) not in h_2028  # Dec 31, 2027 belongs strictly to 2027 set
+    assert all(d.year == 2028 for d in h_2028)
 
 
 def test_rejects_naive_datetime_on_all_fields():

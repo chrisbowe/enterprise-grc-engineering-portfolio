@@ -13,9 +13,25 @@ provider "aws" {
 }
 
 # -----------------------------------------------------------------------------
+# Customer Managed Key (CMK) for Evidence Vault Encryption
+# Enforces automated key rotation (CIS v8 3.11 / NIST CSF 2.0 PR.DS-01 / PR.DS-02)
+# -----------------------------------------------------------------------------
+resource "aws_kms_key" "evidence_vault_key" {
+  description             = "KMS CMK for Enterprise Audit Evidence Vault"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+
+  tags = {
+    Environment        = "Production"
+    ComplianceScope    = "NIST-CSF-2.0"
+    DataClassification = "Confidential"
+  }
+}
+
+# -----------------------------------------------------------------------------
 # Compliant S3 Bucket & Dedicated Server-Side Encryption Configuration
 # Follows AWS Provider >= 4 / 5 best practice (separate encryption resource)
-# Enforces CIS 3.11 / NIST CSF 2.0 PR.DS-01 (explicit KMS encryption vault)
+# References the managed KMS key dynamically (valid for plan and apply)
 # -----------------------------------------------------------------------------
 resource "aws_s3_bucket" "audit_evidence_store" {
   bucket = "enterprise-audit-evidence-vault-2026"
@@ -33,7 +49,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "audit_evidence_st
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm     = "aws:kms"
-      kms_master_key_id = "arn:aws:kms:us-east-1:123456789012:key/sample-evidence-vault-key"
+      kms_master_key_id = aws_kms_key.evidence_vault_key.arn
     }
   }
 }

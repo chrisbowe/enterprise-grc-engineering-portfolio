@@ -266,8 +266,9 @@ class IncidentMaterialityScreen:
                     hours = delta.seconds // 3600
                     mins = (delta.seconds % 3600) // 60
                     sec_entry["discovery_to_determination_elapsed"] = f"{days}d {hours}h {mins}m"
+                    sec_entry["discovery_to_determination_note"] = "Elapsed window recorded for legal counsel review against the SEC 'without unreasonable delay' standard."
                 else:
-                    sec_entry["discovery_to_determination_status"] = "Determination pending without unreasonable delay."
+                    sec_entry["discovery_to_determination_status"] = "Determination pending; evaluate without unreasonable delay with counsel."
 
             regimes.append(sec_entry)
 
