@@ -56,16 +56,17 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "audit_evidence_st
 
 # -----------------------------------------------------------------------------
 # Dynamic AMI Data Lookup & EC2 Worker Node (Compliant by default)
-# Associate Public IP is set to false (private internal subnet).
+# Associate Public IP is set to false (private compute instance).
+# Note: Generating a real plan from this file requires active AWS credentials.
 # Set associate_public_ip_address = true to trigger CIS 12.2 / NIST PR.IR-01 violation.
 # -----------------------------------------------------------------------------
-data "aws_ami" "hardened_linux" {
+data "aws_ami" "amazon_linux_2023" {
   most_recent = true
   owners      = ["amazon"]
 
   filter {
     name   = "name"
-    values = ["al2023-ami-*-x86_64"]
+    values = ["al2023-ami-2023.*-x86_64"]
   }
 
   filter {
@@ -75,9 +76,9 @@ data "aws_ami" "hardened_linux" {
 }
 
 resource "aws_instance" "internal_analytics_worker" {
-  ami                         = data.aws_ami.hardened_linux.id
+  ami                         = data.aws_ami.amazon_linux_2023.id
   instance_type               = "t3.medium"
-  associate_public_ip_address = false # Set to true to trigger CIS 12.2 / NIST PR.IR-01 violation
+  associate_public_ip_address = false # Private compute node; set to true to trigger CIS 12.2 / NIST PR.IR-01
 
   tags = {
     Name            = "AnalyticsWorker-01"

@@ -17,15 +17,23 @@ IMPORTANT - what this tool is and is not
   multiplier on cost.
 * Cost inputs are PLACEHOLDERS. Replace `fixed_response_cost` and `cost_per_record`
   with figures you can source (e.g., your own incident history or a cited breach-cost study).
-* Discovery vs. Awareness Timestamps:
-  - `discovery_time` (SEC): When technical evidence or indicators of an incident are first
-    detected. The SEC requires determination to be made "without unreasonable delay"
-    following discovery.
-  - `awareness_time` (DORA / NIS2): When the entity reaches a reasonable degree of certainty
-    that a major/significant ICT disruption has occurred, starting the 24-hour initial
-    notification / early warning clock.
-  - While technical discovery and institutional awareness often coincide in practice, any
-    discrepancy should be documented and reviewed with counsel.
+
+Timestamp Definitions across Regulatory Regimes
+-----------------------------------------------
+* `discovery_time` (SEC Item 1.05): When the registrant first detects or discovers technical
+  evidence that a cybersecurity incident has occurred. Triggers the obligation to reach a
+  materiality determination "without unreasonable delay."
+* `awareness_time` (EU DORA Art. 19(4) & RTS (EU) 2025/301 Art. 6): When the financial entity
+  becomes aware of the ICT-related incident itself (prior to and independent of whether it is
+  major). Starts the 24-hour outer limit for submitting the initial notification.
+* `dora_classification_time` (DORA RTS (EU) 2024/1772): When the entity classifies the incident
+  as "major" under the criteria (clients affected, downtime, data loss, criticality). Triggers
+  the 4-hour initial notification deadline (capped by the 24-hour awareness outer limit, unless
+  classified late after the 24-hour mark).
+* `awareness_time` (EU NIS2 Art. 23(4)(a)): When the in-scope entity becomes aware that an
+  incident is *significant*, starting the 24-hour early warning clock.
+* `determination_time` (SEC Item 1.05): When the registrant determines the incident is material.
+  Starts the strict four-business-day Form 8-K filing deadline.
 
 Regulatory references (verify against current text before relying on them)
 -------------------------------------------------------------------------
@@ -37,12 +45,14 @@ Regulatory references (verify against current text before relying on them)
   holiday sets may also be passed.
 * DORA (Reg. (EU) 2022/2554; classification RTS (EU) 2024/1772; reporting RTS (EU) 2025/301):
   for incidents classified as MAJOR: initial notification within 4 hours of classification
-  and no later than 24 hours after becoming aware; intermediate report within 72 hours of
-  the initial notification; final report within one month after the latest intermediate
-  report. Applies to in-scope EU financial entities only.
+  and no later than 24 hours after becoming aware of the incident; intermediate report within
+  72 hours of the initial notification; final report within one month after the latest intermediate
+  report. Applies to in-scope EU financial entities only. Timelines run continuously on 24/7 UTC
+  clocks (earlier draft commentary discussing rolling weekend/holiday deadlines to noon the next
+  business day is not modeled here; align local supervisory procedures with counsel).
 * NIS2 (Directive (EU) 2022/2555): for SIGNIFICANT incidents: early warning within 24 hours of
-  awareness; incident notification within 72 hours; final report within one month of the
-  incident notification. DORA is the sector-specific regime for financial entities and
+  awareness of significance; incident notification within 72 hours; final report within one month
+  of the incident notification. DORA is the sector-specific regime for financial entities and
   takes precedence for them.
 """
 
@@ -77,9 +87,9 @@ class IncidentFacts:
     critical_service_down: bool = False
     qualitative_factors: Dict[str, bool] = field(default_factory=dict)
     discovery_time: Optional[datetime] = None          # when incident was discovered (SEC delay clock)
-    awareness_time: Optional[datetime] = None          # when entity became aware (DORA / NIS2 clock)
+    awareness_time: Optional[datetime] = None          # when entity became aware of incident (DORA) / significance (NIS2)
     determination_time: Optional[datetime] = None      # when materiality WAS DETERMINED (SEC clock)
-    dora_classification_time: Optional[datetime] = None  # when classified major (DORA clock)
+    dora_classification_time: Optional[datetime] = None  # when classified major under DORA criteria
 
 
 @dataclass
@@ -123,7 +133,6 @@ def get_us_federal_holidays(year: int) -> set:
     """
     Returns US federal holidays observed in the specified calendar year (5 U.S.C. 6103).
     All returned dates have d.year == year.
-    Includes both actual calendar dates and observed business dates.
     Correctly includes Dec 31 when Jan 1 of year+1 falls on a Saturday.
     """
     h = set()
@@ -136,14 +145,6 @@ def get_us_federal_holidays(year: int) -> set:
     if ny_next.year == year:
         h.add(ny_next)
 
-    # Actual calendar dates for fixed-date holidays
-    h.add(date(year, 1, 1))
-    h.add(date(year, 6, 19))
-    h.add(date(year, 7, 4))
-    h.add(date(year, 11, 11))
-    h.add(date(year, 12, 25))
-
-    # Observed floating and fixed federal holidays
     h.add(_nth_weekday_of_month(year, 1, 0, 3))        # Martin Luther King Jr. Day (3rd Mon Jan)
     h.add(_nth_weekday_of_month(year, 2, 0, 3))        # Washington's Birthday (3rd Mon Feb)
     h.add(_last_weekday_of_month(year, 5, 0))          # Memorial Day (last Mon May)
@@ -297,7 +298,7 @@ class IncidentMaterialityScreen:
             if p.dora_major_incident is None:
                 entry["status"] = "CLASSIFICATION PENDING - classify now; if aware of a potential major incident the 24-hour outer limit is already running."
             elif p.dora_major_incident:
-                entry["obligation"] = ("Initial notification within 4h of classification and no later than 24h after awareness; "
+                entry["obligation"] = ("Initial notification within 4h of classification and no later than 24h after awareness of the incident; "
                                        "intermediate report within 72h of the initial notification; final report within one month "
                                        "after the latest intermediate report.")
                 if f.awareness_time:

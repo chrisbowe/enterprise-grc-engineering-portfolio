@@ -23,7 +23,7 @@ bash run_policy_tests.sh
 ### 2. Enforcing in a Real Production Pipeline
 In an enterprise deployment workflow, the policy gate is embedded into CI/CD prior to applying infrastructure changes:
 ```bash
-# 1. Generate machine-readable plan JSON
+# 1. Generate machine-readable plan JSON (requires AWS credentials & initialized provider)
 terraform plan -out=tfplan
 terraform show -json tfplan > plan.json
 
@@ -33,11 +33,11 @@ opa eval -i plan.json -d policies/ --fail-defined 'data.terraform.compliance.den
 
 ### 3. Reference Infrastructure (`main.tf`)
 `main.tf` provides reference Terraform configurations modeling compliant enterprise patterns:
-* Dedicated KMS Customer Managed Key (`aws_kms_key`) with automated 30-day rotation.
-* Dedicated S3 bucket encryption resource (`aws_s3_bucket_server_side_encryption_configuration`) referencing the KMS key.
-* Private internal EC2 analytics worker node (`associate_public_ip_address = false`) with dynamic AMI lookup.
+* Dedicated KMS Customer Managed Key (`aws_kms_key`) with automated annual key rotation enabled and a 30-day deletion safety window.
+* Dedicated S3 bucket encryption resource (`aws_s3_bucket_server_side_encryption_configuration`) referencing the KMS key dynamically.
+* Private internal EC2 analytics worker node (`associate_public_ip_address = false`) with dynamic Amazon Linux 2023 AMI lookup.
 
 ## ⚠️ Known Limitations (Documented Guardrail Boundaries)
 * **IAM Scope:** Checks full administrative privileges (`*` action on `*` resource). Service-level wildcards (`iam:*`), `NotAction`, and AWS managed policy attachments are not currently evaluated.
 * **Child Modules:** The S3 encryption cross-reference evaluates root-module configurations. Buckets defined inside child modules whose encryption resource lives within that child module fail closed.
-* **Public IP Coverage:** Applies to `aws_instance`, `aws_launch_template`, and `aws_subnet`. Intentional public egress/ingress resources (e.g. NAT gateways, public bastions) must include the exception tag `compliance:public-ip-approved = "true"`.
+* **Public IP Coverage:** Applies to `aws_instance`, `aws_launch_template`, and `aws_subnet`. Intentional public egress/ingress resources (e.g. public bastions and public subnets) must include the exception tag `compliance:public-ip-approved = "true"`.

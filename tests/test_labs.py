@@ -329,33 +329,45 @@ def test_fallback_us_federal_holidays_2026_and_2027():
     """
     Directly exercises get_us_federal_holidays() independently of the `holidays` package.
     Asserts:
-      - 2026 matches the expected federal holiday set (including observed Friday July 3 and actual July 4).
-      - 2027 correctly includes Dec 31, 2027 (observed for New Year's Day Jan 1, 2028).
-      - 2028 does NOT duplicate Dec 31, 2027 (which strictly belongs to the 2027 calendar year).
+      - 2026 matches the exact expected 11 observed federal holidays (including July 3 observed for July 4).
+      - 2027 correctly includes Dec 31, 2027 (observed for New Year's Day Jan 1, 2028), totaling 12 holidays.
+      - 2028 does NOT duplicate Dec 31, 2027 (which strictly belongs to the 2027 calendar year), totaling 10 holidays.
       - All dates strictly fall within their respective calendar years.
     """
+    expected_2026 = {
+        date(2026, 1, 1),   # New Year's Day
+        date(2026, 1, 19),  # Martin Luther King Jr. Day
+        date(2026, 2, 16),  # Washington's Birthday
+        date(2026, 5, 25),  # Memorial Day
+        date(2026, 6, 19),  # Juneteenth
+        date(2026, 7, 3),   # Independence Day (July 4 is Sat -> observed Fri July 3)
+        date(2026, 9, 7),   # Labor Day
+        date(2026, 10, 12), # Columbus Day
+        date(2026, 11, 11), # Veterans Day
+        date(2026, 11, 26), # Thanksgiving Day
+        date(2026, 12, 25), # Christmas Day
+    }
     h_2026 = get_us_federal_holidays(2026)
-    assert date(2026, 1, 1) in h_2026
-    assert date(2026, 7, 3) in h_2026   # July 4 is Sat -> observed Fri July 3
-    assert date(2026, 7, 4) in h_2026   # Actual calendar date
-    assert date(2026, 11, 11) in h_2026 # Veterans Day
-    assert date(2026, 12, 25) in h_2026 # Christmas Day
+    assert h_2026 == expected_2026
+    assert len(h_2026) == 11
     assert all(d.year == 2026 for d in h_2026)
 
     h_2027 = get_us_federal_holidays(2027)
     assert date(2027, 12, 31) in h_2027  # Jan 1, 2028 is Sat -> observed Fri Dec 31, 2027
+    assert len(h_2027) == 12
     assert all(d.year == 2027 for d in h_2027)
 
     h_2028 = get_us_federal_holidays(2028)
     assert date(2027, 12, 31) not in h_2028  # Dec 31, 2027 belongs strictly to 2027 set
+    assert len(h_2028) == 10
     assert all(d.year == 2028 for d in h_2028)
 
 
 def test_holiday_library_cross_check_2026_to_2028():
     """
     Cross-checks the built-in fallback calendar against the `holidays` PyPI package
-    for calendar years 2026, 2027, and 2028.
-    Ensures identical set membership across both implementations.
+    for calendar years 2026, 2027, and 2028 on all business weekdays.
+    Both implementations must agree on all weekday observed federal holidays.
     """
     try:
         import holidays as pyholidays
@@ -364,10 +376,11 @@ def test_holiday_library_cross_check_2026_to_2028():
             pytest.skip("holidays library not installed; skipping cross-check")
         return
 
+    wd = lambda s: {d for d in s if d.weekday() < 5}
     for year in (2026, 2027, 2028):
         fallback = get_us_federal_holidays(year)
         lib = set(pyholidays.country_holidays("US", years=year).keys())
-        assert fallback == lib, f"Mismatch in {year}: fallback={fallback - lib}, lib={lib - fallback}"
+        assert wd(fallback) == wd(lib), f"Weekday holiday mismatch in {year}: fallback={wd(fallback) - wd(lib)}, lib={wd(lib) - wd(fallback)}"
 
 
 def test_rejects_naive_datetime_on_all_fields():
