@@ -3,11 +3,7 @@ import sys
 from datetime import date, datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 import numpy as np
-
-try:
-    import pytest
-except ImportError:
-    pytest = None
+import pytest
 
 # Construct absolute paths relative to this test file so tests run from any directory
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -318,11 +314,8 @@ def test_sec_discovery_to_determination_reporting_and_validation():
         discovery_time=det,
         determination_time=disc
     )
-    try:
+    with pytest.raises(ValueError, match="cannot precede discovery_time"):
         IncidentMaterialityScreen(facts_invalid, profile)
-        assert False, "Expected ValueError when determination_time precedes discovery_time"
-    except ValueError as e:
-        assert "cannot precede discovery_time" in str(e)
 
 
 def test_fallback_us_federal_holidays_2026_and_2027():
