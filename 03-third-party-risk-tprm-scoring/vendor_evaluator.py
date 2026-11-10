@@ -53,12 +53,31 @@ def _parse_date(value, name):
         raise ValueError(f"'{name}' must be YYYY-MM-DD, got {value!r}")
 
 
+RECOGNIZED_DATA_ACCESS_KEYS = {
+    "has_pii", "has_prod_db_access", "handles_financials", "network_peering",
+    "business_critical", "has_internal_docs", "employee_email_access"
+}
+RECOGNIZED_CONTROL_KEYS = {
+    "soc2_report_period_end", "soc2_type_2_current", "iso27001_cert_expiry",
+    "phishing_resistant_mfa_enforced", "vendor_breach_notification_hours",
+    "subprocessor_breach_notification_hours", "enforces_saml_sso"
+}
+
+
 class VendorRiskEvaluator:
     def __init__(self, assessment_data, as_of=None):
         self.data = assessment_data
         self.as_of = as_of or date.today()
         if not isinstance(assessment_data.get("data_access"), dict) or not assessment_data["data_access"]:
             raise ValueError("'data_access' section is required: refusing to default an unassessed vendor to Tier 4.")
+
+        # Warn on unrecognized schema fields to alert callers to schema drift
+        da_unknown = set(self.data.get("data_access", {}).keys()) - RECOGNIZED_DATA_ACCESS_KEYS
+        if da_unknown:
+            sys.stderr.write(f"Warning: unrecognized 'data_access' fields ignored: {sorted(da_unknown)}\n")
+        ctrl_unknown = set(self.data.get("security_controls", {}).keys()) - RECOGNIZED_CONTROL_KEYS
+        if ctrl_unknown:
+            sys.stderr.write(f"Warning: unrecognized 'security_controls' fields ignored: {sorted(ctrl_unknown)}\n")
 
     # ------------------------------------------------------------------ tiering
     def calculate_tier_number(self):

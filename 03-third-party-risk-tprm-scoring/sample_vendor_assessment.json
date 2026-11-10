@@ -6,17 +6,13 @@
   "data_access": {
     "has_pii": true,
     "has_prod_db_access": true,
-    "handles_financials": false,
-    "data_residency_regions": ["US-East", "EU-Frankfurt"]
+    "handles_financials": false
   },
   "security_controls": {
-    "soc2_type_2_current": false,
-    "soc2_report_date": "2024-03-15",
-    "iso_27001_certified": true,
+    "soc2_report_period_end": "2024-03-15",
+    "iso27001_cert_expiry": null,
     "enforces_saml_sso": true,
     "phishing_resistant_mfa_enforced": false,
-    "subprocessor_breach_notification_hours": 96,
-    "encryption_in_transit_tls_version": "1.3",
-    "encryption_at_rest_enforced": true
+    "vendor_breach_notification_hours": 96
   }
 }

@@ -5,7 +5,7 @@
 ### 🏛️ Regulatory Regime Applicability
 Not all regimes apply to every incident or organization. Assess jurisdiction and scope during initial triage:
 * **U.S. SEC Form 8-K (Item 1.05):** Applies to public reporting companies (registrants) subject to the Securities Exchange Act of 1934.
-* **EU DORA (Regulation (EU) 2022/2554 & RTS (EU) 2025/301):** Sector-specific regime applying to regulated EU financial entities (credit institutions, investment firms, payment providers, etc.) and their critical ICT third-party service providers.
+* **EU DORA (Regulation (EU) 2022/2554 & RTS (EU) 2025/301):** Sector-specific regime applying to regulated EU financial entities (credit institutions, investment firms, payment service providers, etc.). Incident reporting duties under Article 19 apply to financial entities; critical ICT third-party service providers are subject to DORA's direct oversight framework under Chapter V, while their customer financial entities submit the incident reports.
 * **EU NIS2 Directive (Directive (EU) 2022/2555):** Applies to essential and important entities across covered sectors (energy, transport, healthcare, digital infrastructure, etc.). For financial entities in scope of DORA, DORA governs incident reporting as *lex specialis*.
 
 ---
@@ -27,11 +27,11 @@ Not all regimes apply to every incident or organization. Assess jurisdiction and
 * **Parallel Assessment Tracks:**
   * **Track A — SEC Materiality Determination (Item 1.05):**
     * *Quantitative Impact:* Direct revenue loss + incident response costs (forensics, remediation, legal counsel, customer notification, PR) compared against corporate screening baselines (e.g. 0.5% annual revenue; this threshold is an internal company heuristic, not an SEC-mandated statutory safe harbor). Reputational harm is evaluated qualitatively under SEC factors, not modeled as a speculative cost multiplier.
-    * *Qualitative Factors:* Evaluated strictly against the four qualitative factors named in SEC Adopting Release 33-11216:
+    * *Qualitative Factors:* Evaluated against non-exhaustive qualitative factors (including the four examples cited in SEC Adopting Release 33-11216, alongside core infrastructure downtime and mass data exposure indicators):
       1. `reputational_harm` (harm to brand standing or public trust)
       2. `customer_or_vendor_relationship_harm` (contractual default, customer loss, partner churn)
       3. `competitive_harm` (exfiltration of source code, trade secrets, strategic roadmap)
-      4. `litigation_or_regulatory_action` (potential class actions, regulatory investigations, statutory fines)
+      4. `litigation_or_regulatory_action_likely` (likelihood of class actions, regulatory investigations, statutory enforcement)
     * *Timing Requirement:* Materiality determination must be reached without unreasonable delay following discovery. Elapsed time between discovery and determination is tracked for legal counsel review.
   * **Track B — EU DORA Major Incident Classification (RTS (EU) 2024/1772):**
     * Evaluated independently of SEC materiality against DORA criteria (clients/transactions affected, duration, data loss, geographic spread, criticality of services, economic impact).

@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "03-third-party-risk-tprm-scoring"))
 sys.path.insert(0, os.path.join(REPO_ROOT, "04-sec-dora-incident-disclosure"))
 
 from fair_engine import analyze_scenario, run_monte_carlo_fair, summarize, _draw, main as fair_main
-from vendor_evaluator import VendorRiskEvaluator
+from vendor_evaluator import VendorRiskEvaluator, main as vendor_main
 from materiality_calculator import IncidentMaterialityScreen, IncidentFacts, EntityProfile, get_us_federal_holidays
 
 # -----------------------------------------------------------------------------
@@ -362,13 +362,7 @@ def test_holiday_library_cross_check_2026_to_2028():
     for calendar years 2026, 2027, and 2028 on all business weekdays.
     Both implementations must agree on all weekday observed federal holidays.
     """
-    try:
-        import holidays as pyholidays
-    except ImportError:
-        if pytest:
-            pytest.skip("holidays library not installed; skipping cross-check")
-        return
-
+    pyholidays = pytest.importorskip("holidays")
     wd = lambda s: {d for d in s if d.weekday() < 5}
     for year in (2026, 2027, 2028):
         fallback = get_us_federal_holidays(year)
@@ -566,6 +560,36 @@ def test_nis2_deadlines_and_status_paths():
     assert "early_warning_due" not in nis2_not_sig
 
 
+def test_vendor_evaluator_sample_assessment_file_and_cli():
+    """
+    Verifies that sample_vendor_assessment.json matches the evaluator schema,
+    evaluates to Tier 1 with REJECTED status due to stale SOC 2 and missing controls,
+    and runs cleanly through vendor_evaluator main() CLI.
+    """
+    import json
+    sample_path = os.path.join(REPO_ROOT, "03-third-party-risk-tprm-scoring", "sample_vendor_assessment.json")
+    with open(sample_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    # Fixed as_of date to ensure deterministic recency tests
+    as_of = date(2026, 11, 10)
+    dossier = VendorRiskEvaluator(data, as_of=as_of).generate_procurement_dossier()
+    assert dossier["tier_number"] == 1
+    assert dossier["criticality_tier"] == "Tier 1 (Critical Enterprise Risk)"
+    assert dossier["procurement_status"] == "REJECTED - REMEDIATE BEFORE PROCUREMENT"
+    assert dossier["total_risk_findings"] == 3
+
+    severities = [f["severity"] for f in dossier["findings"]]
+    assert severities == ["CRITICAL", "HIGH", "HIGH"]
+    assert any("SOC 2 Type II period ended 2024-03-15" in f["finding"] for f in dossier["findings"])
+    assert any("Administrative MFA Strength" in f["control"] for f in dossier["findings"])
+    assert any("Breach Notification SLA" in f["control"] for f in dossier["findings"])
+
+    # Verify CLI entrypoint returns exit code 0
+    exit_code = vendor_main([sample_path])
+    assert exit_code == 0
+
+
 if __name__ == '__main__':
     test_fair_engine_reproducibility()
     test_fair_portfolio_event_accumulation()
@@ -575,6 +599,7 @@ if __name__ == '__main__':
     test_vendor_evaluator_tier_scaling()
     test_vendor_evaluator_finding_generation()
     test_vendor_soc2_recency_boundaries()
+    test_vendor_evaluator_sample_assessment_file_and_cli()
     test_sec_due_date_uses_eastern_time_and_holidays()
     test_sec_due_date_default_federal_holidays()
     test_sec_discovery_to_determination_reporting_and_validation()
@@ -587,4 +612,4 @@ if __name__ == '__main__':
     test_dora_classification_without_awareness_status_note()
     test_dora_pending_and_not_major_statuses()
     test_nis2_deadlines_and_status_paths()
-    print("All 20 portfolio unit tests passed successfully!")
+    print("All 21 portfolio unit tests passed successfully!")
