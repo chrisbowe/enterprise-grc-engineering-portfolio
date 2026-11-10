@@ -385,6 +385,7 @@ def test_holiday_library_cross_check_2026_to_2028():
 
 def test_rejects_naive_datetime_on_all_fields():
     """Verifies that _validate() strictly rejects naive datetimes and non-datetime types on all four datetime attributes."""
+    profile = EntityProfile(annual_revenue=100_000_000.0, is_sec_registrant=True, is_dora_entity=True, is_nis2_entity=True)
     for field_name in ("discovery_time", "awareness_time", "determination_time", "dora_classification_time"):
         kwargs = {
             "incident_name": "Naive Test",
@@ -394,21 +395,14 @@ def test_rejects_naive_datetime_on_all_fields():
         }
         kwargs[field_name] = datetime(2026, 11, 6, 12, 0)  # naive datetime!
         facts = IncidentFacts(**kwargs)
-        profile = EntityProfile(annual_revenue=100_000_000.0, is_sec_registrant=True, is_dora_entity=True, is_nis2_entity=True)
-        try:
+        with pytest.raises(ValueError, match="must be timezone-aware"):
             IncidentMaterialityScreen(facts, profile)
-            assert False, f"Expected ValueError for naive datetime in {field_name}"
-        except ValueError as e:
-            assert "must be timezone-aware" in str(e)
 
         # Non-datetime rejection: ensures _validate() executes before __init__ reads .year
         kwargs[field_name] = "2026-11-06T12:00:00Z"
         facts_str = IncidentFacts(**kwargs)
-        try:
+        with pytest.raises(TypeError, match="must be a datetime instance"):
             IncidentMaterialityScreen(facts_str, profile)
-            assert False, f"Expected TypeError for string passed to {field_name}"
-        except TypeError as e:
-            assert "must be a datetime instance" in str(e)
 
 
 def test_dora_classification_within_24h_normal_and_capped_paths():
@@ -512,6 +506,73 @@ def test_holiday_window_anchoring_independent_of_current_year():
     assert sec_regime["filing_due_date"] == "2021-11-17"
 
 
+def test_dora_pending_and_not_major_statuses():
+    """
+    Verifies DORA output statuses when:
+      1. Major incident classification is pending (dora_major_incident is None).
+      2. Incident is classified as not major (dora_major_incident is False).
+    """
+    now = datetime(2026, 11, 1, 12, 0, tzinfo=timezone.utc)
+    facts = IncidentFacts(
+        incident_name="DORA Classification Status Test",
+        rev_impact_per_hour=1000.0,
+        downtime_hours=1.0,
+        records_exposed=50,
+        awareness_time=now
+    )
+    # Case 1: Classification pending
+    p_pending = EntityProfile(annual_revenue=50_000_000.0, is_dora_entity=True, dora_major_incident=None)
+    s_pending = IncidentMaterialityScreen(facts, p_pending).screen()
+    dora_pending = next(r for r in s_pending["regulatory_regimes"] if "DORA" in r["regime"])
+    assert "CLASSIFICATION PENDING" in dora_pending["status"]
+    assert "initial_notification_due" not in dora_pending
+
+    # Case 2: Classified NOT major
+    p_not_major = EntityProfile(annual_revenue=50_000_000.0, is_dora_entity=True, dora_major_incident=False)
+    s_not_major = IncidentMaterialityScreen(facts, p_not_major).screen()
+    dora_not_major = next(r for r in s_not_major["regulatory_regimes"] if "DORA" in r["regime"])
+    assert "NOT major" in dora_not_major["status"]
+    assert "initial_notification_due" not in dora_not_major
+
+
+def test_nis2_deadlines_and_status_paths():
+    """
+    Verifies EU NIS2 significant incident reporting:
+      1. Significant incident: early warning within 24h of awareness, incident notification within 72h.
+      2. Significance assessment pending (nis2_significant_incident is None).
+      3. Assessed not significant (nis2_significant_incident is False).
+    """
+    now = datetime(2026, 11, 1, 12, 0, tzinfo=timezone.utc)
+    facts = IncidentFacts(
+        incident_name="NIS2 Reporting Test",
+        rev_impact_per_hour=2000.0,
+        downtime_hours=2.0,
+        records_exposed=100,
+        awareness_time=now
+    )
+    # Case 1: Significant incident
+    p_sig = EntityProfile(annual_revenue=50_000_000.0, is_nis2_entity=True, nis2_significant_incident=True)
+    s_sig = IncidentMaterialityScreen(facts, p_sig).screen()
+    nis2_sig = next(r for r in s_sig["regulatory_regimes"] if "NIS2" in r["regime"])
+    assert nis2_sig["early_warning_due"] == "2026-11-02T12:00:00Z"
+    assert nis2_sig["incident_notification_due"] == "2026-11-04T12:00:00Z"
+    assert "Early warning within 24h" in nis2_sig["obligation"]
+
+    # Case 2: Assessment pending
+    p_pending = EntityProfile(annual_revenue=50_000_000.0, is_nis2_entity=True, nis2_significant_incident=None)
+    s_pending = IncidentMaterialityScreen(facts, p_pending).screen()
+    nis2_pending = next(r for r in s_pending["regulatory_regimes"] if "NIS2" in r["regime"])
+    assert "ASSESSMENT PENDING" in nis2_pending["status"]
+    assert "early_warning_due" not in nis2_pending
+
+    # Case 3: Assessed NOT significant
+    p_not_sig = EntityProfile(annual_revenue=50_000_000.0, is_nis2_entity=True, nis2_significant_incident=False)
+    s_not_sig = IncidentMaterialityScreen(facts, p_not_sig).screen()
+    nis2_not_sig = next(r for r in s_not_sig["regulatory_regimes"] if "NIS2" in r["regime"])
+    assert "NOT significant" in nis2_not_sig["status"]
+    assert "early_warning_due" not in nis2_not_sig
+
+
 if __name__ == '__main__':
     test_fair_engine_reproducibility()
     test_fair_portfolio_event_accumulation()
@@ -531,4 +592,6 @@ if __name__ == '__main__':
     test_dora_classification_within_24h_normal_and_capped_paths()
     test_dora_late_classification()
     test_dora_classification_without_awareness_status_note()
-    print("All 18 portfolio unit tests passed successfully!")
+    test_dora_pending_and_not_major_statuses()
+    test_nis2_deadlines_and_status_paths()
+    print("All 20 portfolio unit tests passed successfully!")
