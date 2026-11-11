@@ -592,29 +592,21 @@ def test_vendor_evaluator_sample_assessment_file_and_cli():
     assert vendor_main(["--strict", sample_path]) == 0
 
 
-def test_vendor_evaluator_robustness_and_future_soc2():
-    """
-    Verifies that:
-      1. Null security_controls section does not crash and defaults safely.
-      2. Non-dict security_controls raises ValueError.
-      3. Future-dated SOC 2 period end is rejected with explicit 'in the future' notice.
-      4. Unknown fields trigger UserWarning and are rejected by --strict CLI flag.
-      5. Malformed JSON and array root files return exit code 2 with clean errors.
-    """
-    import tempfile
-    import json
-
-    # 1. Null security_controls doesn't crash
+def test_vendor_evaluator_null_and_invalid_security_controls():
+    """Verifies that null security_controls defaults safely and non-dict values raise ValueError."""
+    # Null security_controls defaults safely
     evaluator_null = VendorRiskEvaluator({"data_access": {"has_pii": True}, "security_controls": None})
     dossier_null = evaluator_null.generate_procurement_dossier()
     assert dossier_null["tier_number"] == 1
     assert dossier_null["procurement_status"] == "REJECTED - REMEDIATE BEFORE PROCUREMENT"
 
-    # 2. Non-dict security_controls raises ValueError
+    # Non-dict security_controls raises ValueError
     with pytest.raises(ValueError, match="'security_controls' must be a dict"):
         VendorRiskEvaluator({"data_access": {"has_pii": True}, "security_controls": "invalid"})
 
-    # 3. Future-dated SOC 2 period end
+
+def test_vendor_evaluator_future_dated_soc2_period_end():
+    """Verifies that a future-dated SOC 2 period end is rejected with an explicit 'in the future' notice."""
     evaluator_future = VendorRiskEvaluator({
         "data_access": {"has_pii": True},
         "security_controls": {"soc2_report_period_end": "2027-01-01"}
@@ -623,11 +615,17 @@ def test_vendor_evaluator_robustness_and_future_soc2():
     assurance_finding = next(f for f in dossier_future["findings"] if "Independent Assurance" in f["control"])
     assert "is in the future; verify" in assurance_finding["finding"]
 
-    # 4. Unknown fields trigger UserWarning
+
+def test_vendor_evaluator_unknown_fields_warning_and_strict_mode():
+    """Verifies that unrecognized fields emit UserWarning and are rejected by --strict CLI flag."""
+    import tempfile
+    import json
+
+    # Unknown fields trigger UserWarning
     with pytest.warns(UserWarning, match="unrecognized 'data_access' fields ignored"):
         VendorRiskEvaluator({"data_access": {"has_pii": True, "custom_field": 123}})
 
-    # 5. Strict mode CLI rejects unknown fields
+    # Strict mode CLI rejects unknown fields
     with tempfile.NamedTemporaryFile("w+", delete=False, suffix=".json") as tf:
         json.dump({"data_access": {"has_pii": True, "unknown_field": True}}, tf)
         tmp_name = tf.name
@@ -638,7 +636,16 @@ def test_vendor_evaluator_robustness_and_future_soc2():
         if os.path.exists(tmp_name):
             os.remove(tmp_name)
 
-    # 6. Malformed JSON file returns exit code 2
+
+def test_vendor_evaluator_cli_file_error_handling():
+    """Verifies that malformed JSON, non-object roots, and missing files return clean exit codes."""
+    import tempfile
+    import json
+
+    # Missing file returns exit code 1
+    assert vendor_main(["non_existent_file_xyz.json"]) == 1
+
+    # Malformed JSON file returns exit code 2
     with tempfile.NamedTemporaryFile("w+", delete=False, suffix=".json") as tf:
         tf.write("{malformed json")
         tmp_bad = tf.name
@@ -649,7 +656,7 @@ def test_vendor_evaluator_robustness_and_future_soc2():
         if os.path.exists(tmp_bad):
             os.remove(tmp_bad)
 
-    # 7. Non-object JSON root (array) returns exit code 2
+    # Non-object JSON root (array) returns exit code 2
     with tempfile.NamedTemporaryFile("w+", delete=False, suffix=".json") as tf:
         json.dump([{"data_access": {"has_pii": True}}], tf)
         tmp_arr = tf.name
@@ -671,7 +678,10 @@ if __name__ == '__main__':
     test_vendor_evaluator_finding_generation()
     test_vendor_soc2_recency_boundaries()
     test_vendor_evaluator_sample_assessment_file_and_cli()
-    test_vendor_evaluator_robustness_and_future_soc2()
+    test_vendor_evaluator_null_and_invalid_security_controls()
+    test_vendor_evaluator_future_dated_soc2_period_end()
+    test_vendor_evaluator_unknown_fields_warning_and_strict_mode()
+    test_vendor_evaluator_cli_file_error_handling()
     test_sec_due_date_uses_eastern_time_and_holidays()
     test_sec_due_date_default_federal_holidays()
     test_sec_discovery_to_determination_reporting_and_validation()
@@ -684,4 +694,4 @@ if __name__ == '__main__':
     test_dora_classification_without_awareness_status_note()
     test_dora_pending_and_not_major_statuses()
     test_nis2_deadlines_and_status_paths()
-    print("All 22 portfolio unit tests passed successfully!")
+    print("All 25 portfolio unit tests passed successfully!")

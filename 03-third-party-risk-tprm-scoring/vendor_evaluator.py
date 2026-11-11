@@ -239,7 +239,7 @@ def main(argv=None):
             print(f"Input error: strict mode rejected unrecognized fields: {evaluator.unknown_fields}", file=sys.stderr)
             return 2
         dossier = evaluator.generate_procurement_dossier()
-    except (json.JSONDecodeError, ValueError) as exc:
+    except (json.JSONDecodeError, ValueError, OSError) as exc:
         print(f"Input error: {exc}", file=sys.stderr)
         return 2
 
