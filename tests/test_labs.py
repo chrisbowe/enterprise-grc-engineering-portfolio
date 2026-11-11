@@ -588,6 +588,51 @@ def test_vendor_evaluator_sample_assessment_file_and_cli():
     # Verify CLI entrypoint returns exit code 0
     exit_code = vendor_main([sample_path])
     assert exit_code == 0
+    # Also verify --strict flag accepts compliant sample file
+    assert vendor_main(["--strict", sample_path]) == 0
+
+
+def test_vendor_evaluator_robustness_and_future_soc2():
+    """
+    Verifies that:
+      1. Null security_controls section does not crash and defaults safely.
+      2. Non-dict security_controls raises ValueError.
+      3. Future-dated SOC 2 period end is rejected with explicit 'in the future' notice.
+      4. Unknown fields are tracked and rejected by --strict CLI flag.
+    """
+    import tempfile
+    import json
+
+    # 1. Null security_controls doesn't crash
+    evaluator_null = VendorRiskEvaluator({"data_access": {"has_pii": True}, "security_controls": None})
+    dossier_null = evaluator_null.generate_procurement_dossier()
+    assert dossier_null["tier_number"] == 1
+    assert dossier_null["procurement_status"] == "REJECTED - REMEDIATE BEFORE PROCUREMENT"
+
+    # 2. Non-dict security_controls raises ValueError
+    with pytest.raises(ValueError, match="'security_controls' must be a dict"):
+        VendorRiskEvaluator({"data_access": {"has_pii": True}, "security_controls": "invalid"})
+
+    # 3. Future-dated SOC 2 period end
+    evaluator_future = VendorRiskEvaluator({
+        "data_access": {"has_pii": True},
+        "security_controls": {"soc2_report_period_end": "2027-01-01"}
+    }, as_of=date(2026, 11, 10))
+    dossier_future = evaluator_future.generate_procurement_dossier()
+    assurance_finding = next(f for f in dossier_future["findings"] if "Independent Assurance" in f["control"])
+    assert "is in the future; verify" in assurance_finding["finding"]
+
+    # 4. Strict mode CLI rejects unknown fields
+    with tempfile.NamedTemporaryFile("w+", delete=False, suffix=".json") as tf:
+        json.dump({"data_access": {"has_pii": True, "unknown_field": True}}, tf)
+        tmp_name = tf.name
+
+    try:
+        exit_code = vendor_main(["--strict", tmp_name])
+        assert exit_code == 2
+    finally:
+        if os.path.exists(tmp_name):
+            os.remove(tmp_name)
 
 
 if __name__ == '__main__':
@@ -600,6 +645,7 @@ if __name__ == '__main__':
     test_vendor_evaluator_finding_generation()
     test_vendor_soc2_recency_boundaries()
     test_vendor_evaluator_sample_assessment_file_and_cli()
+    test_vendor_evaluator_robustness_and_future_soc2()
     test_sec_due_date_uses_eastern_time_and_holidays()
     test_sec_due_date_default_federal_holidays()
     test_sec_discovery_to_determination_reporting_and_validation()
@@ -612,4 +658,4 @@ if __name__ == '__main__':
     test_dora_classification_without_awareness_status_note()
     test_dora_pending_and_not_major_statuses()
     test_nis2_deadlines_and_status_paths()
-    print("All 21 portfolio unit tests passed successfully!")
+    print("All 22 portfolio unit tests passed successfully!")

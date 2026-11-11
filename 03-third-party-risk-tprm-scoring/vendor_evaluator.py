@@ -68,15 +68,26 @@ class VendorRiskEvaluator:
     def __init__(self, assessment_data, as_of=None):
         self.data = assessment_data
         self.as_of = as_of or date.today()
-        if not isinstance(assessment_data.get("data_access"), dict) or not assessment_data["data_access"]:
+        da = assessment_data.get("data_access")
+        if not isinstance(da, dict) or not da:
             raise ValueError("'data_access' section is required: refusing to default an unassessed vendor to Tier 4.")
 
-        # Warn on unrecognized schema fields to alert callers to schema drift
-        da_unknown = set(self.data.get("data_access", {}).keys()) - RECOGNIZED_DATA_ACCESS_KEYS
+        sc = assessment_data.get("security_controls")
+        if sc is not None and not isinstance(sc, dict):
+            raise ValueError("'security_controls' must be a dict when provided.")
+        sc = sc or {}
+
+        # Track unrecognized schema fields to alert callers to schema drift
+        self.unknown_fields = []
+        da_unknown = set(da.keys()) - RECOGNIZED_DATA_ACCESS_KEYS
         if da_unknown:
+            for k in sorted(da_unknown):
+                self.unknown_fields.append(f"data_access.{k}")
             sys.stderr.write(f"Warning: unrecognized 'data_access' fields ignored: {sorted(da_unknown)}\n")
-        ctrl_unknown = set(self.data.get("security_controls", {}).keys()) - RECOGNIZED_CONTROL_KEYS
+        ctrl_unknown = set(sc.keys()) - RECOGNIZED_CONTROL_KEYS
         if ctrl_unknown:
+            for k in sorted(ctrl_unknown):
+                self.unknown_fields.append(f"security_controls.{k}")
             sys.stderr.write(f"Warning: unrecognized 'security_controls' fields ignored: {sorted(ctrl_unknown)}\n")
 
     # ------------------------------------------------------------------ tiering
@@ -100,10 +111,13 @@ class VendorRiskEvaluator:
         """Returns (satisfied, evidence description)."""
         end = _parse_date(controls.get("soc2_report_period_end"), "soc2_report_period_end")
         if end:
-            age = (self.as_of - end).days
-            if 0 <= age <= 365:
-                return True, f"SOC 2 Type II period ended {end} ({age} days ago)"
-            soc2_note = f"SOC 2 Type II period ended {end} ({age} days ago, outside 12 months)"
+            if end > self.as_of:
+                soc2_note = f"SOC 2 Type II period end {end} is in the future; verify"
+            else:
+                age = (self.as_of - end).days
+                if 0 <= age <= 365:
+                    return True, f"SOC 2 Type II period ended {end} ({age} days ago)"
+                soc2_note = f"SOC 2 Type II period ended {end} ({age} days ago, outside 12 months)"
         elif "soc2_type_2_current" in controls:
             if _flag(controls["soc2_type_2_current"], "soc2_type_2_current"):
                 return True, "SOC 2 Type II self-attested by vendor (no report date supplied; verify the report)"
@@ -202,7 +216,11 @@ class VendorRiskEvaluator:
 
 
 def main(argv=None):
-    argv = sys.argv[1:] if argv is None else argv
+    argv = list(sys.argv[1:] if argv is None else argv)
+    strict = False
+    if "--strict" in argv:
+        strict = True
+        argv.remove("--strict")
     script_dir = os.path.dirname(os.path.abspath(__file__))
     file_path = argv[0] if argv else os.path.join(script_dir, "sample_vendor_assessment.json")
 
@@ -213,7 +231,11 @@ def main(argv=None):
         assessment = json.load(f)
 
     try:
-        dossier = VendorRiskEvaluator(assessment).generate_procurement_dossier()
+        evaluator = VendorRiskEvaluator(assessment)
+        if strict and evaluator.unknown_fields:
+            print(f"Input error: strict mode rejected unrecognized fields: {evaluator.unknown_fields}", file=sys.stderr)
+            return 2
+        dossier = evaluator.generate_procurement_dossier()
     except ValueError as exc:
         print(f"Input error: {exc}", file=sys.stderr)
         return 2

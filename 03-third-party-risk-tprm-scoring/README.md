@@ -37,4 +37,7 @@ python vendor_evaluator.py
 
 # Evaluate a custom vendor assessment file
 python vendor_evaluator.py /path/to/assessment.json
+
+# Evaluate in strict mode (rejects unrecognized schema fields with exit code 2)
+python vendor_evaluator.py --strict /path/to/assessment.json
 ```
