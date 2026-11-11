@@ -20,6 +20,7 @@ security_controls:
 import json
 import os
 import sys
+import warnings
 from datetime import date, datetime
 
 SEVERITY_ORDER = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
@@ -83,12 +84,12 @@ class VendorRiskEvaluator:
         if da_unknown:
             for k in sorted(da_unknown):
                 self.unknown_fields.append(f"data_access.{k}")
-            sys.stderr.write(f"Warning: unrecognized 'data_access' fields ignored: {sorted(da_unknown)}\n")
+            warnings.warn(f"unrecognized 'data_access' fields ignored: {sorted(da_unknown)}", UserWarning, stacklevel=2)
         ctrl_unknown = set(sc.keys()) - RECOGNIZED_CONTROL_KEYS
         if ctrl_unknown:
             for k in sorted(ctrl_unknown):
                 self.unknown_fields.append(f"security_controls.{k}")
-            sys.stderr.write(f"Warning: unrecognized 'security_controls' fields ignored: {sorted(ctrl_unknown)}\n")
+            warnings.warn(f"unrecognized 'security_controls' fields ignored: {sorted(ctrl_unknown)}", UserWarning, stacklevel=2)
 
     # ------------------------------------------------------------------ tiering
     def calculate_tier_number(self):
@@ -227,16 +228,18 @@ def main(argv=None):
     if not os.path.exists(file_path):
         print(f"Error: Assessment file not found at {file_path}", file=sys.stderr)
         return 1
-    with open(file_path, "r", encoding="utf-8-sig") as f:
-        assessment = json.load(f)
 
     try:
+        with open(file_path, "r", encoding="utf-8-sig") as f:
+            assessment = json.load(f)
+        if not isinstance(assessment, dict):
+            raise ValueError(f"assessment document root must be a JSON object, got {type(assessment).__name__}")
         evaluator = VendorRiskEvaluator(assessment)
         if strict and evaluator.unknown_fields:
             print(f"Input error: strict mode rejected unrecognized fields: {evaluator.unknown_fields}", file=sys.stderr)
             return 2
         dossier = evaluator.generate_procurement_dossier()
-    except ValueError as exc:
+    except (json.JSONDecodeError, ValueError) as exc:
         print(f"Input error: {exc}", file=sys.stderr)
         return 2
 

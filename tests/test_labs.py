@@ -598,7 +598,8 @@ def test_vendor_evaluator_robustness_and_future_soc2():
       1. Null security_controls section does not crash and defaults safely.
       2. Non-dict security_controls raises ValueError.
       3. Future-dated SOC 2 period end is rejected with explicit 'in the future' notice.
-      4. Unknown fields are tracked and rejected by --strict CLI flag.
+      4. Unknown fields trigger UserWarning and are rejected by --strict CLI flag.
+      5. Malformed JSON and array root files return exit code 2 with clean errors.
     """
     import tempfile
     import json
@@ -622,17 +623,42 @@ def test_vendor_evaluator_robustness_and_future_soc2():
     assurance_finding = next(f for f in dossier_future["findings"] if "Independent Assurance" in f["control"])
     assert "is in the future; verify" in assurance_finding["finding"]
 
-    # 4. Strict mode CLI rejects unknown fields
+    # 4. Unknown fields trigger UserWarning
+    with pytest.warns(UserWarning, match="unrecognized 'data_access' fields ignored"):
+        VendorRiskEvaluator({"data_access": {"has_pii": True, "custom_field": 123}})
+
+    # 5. Strict mode CLI rejects unknown fields
     with tempfile.NamedTemporaryFile("w+", delete=False, suffix=".json") as tf:
         json.dump({"data_access": {"has_pii": True, "unknown_field": True}}, tf)
         tmp_name = tf.name
 
     try:
-        exit_code = vendor_main(["--strict", tmp_name])
-        assert exit_code == 2
+        assert vendor_main(["--strict", tmp_name]) == 2
     finally:
         if os.path.exists(tmp_name):
             os.remove(tmp_name)
+
+    # 6. Malformed JSON file returns exit code 2
+    with tempfile.NamedTemporaryFile("w+", delete=False, suffix=".json") as tf:
+        tf.write("{malformed json")
+        tmp_bad = tf.name
+
+    try:
+        assert vendor_main([tmp_bad]) == 2
+    finally:
+        if os.path.exists(tmp_bad):
+            os.remove(tmp_bad)
+
+    # 7. Non-object JSON root (array) returns exit code 2
+    with tempfile.NamedTemporaryFile("w+", delete=False, suffix=".json") as tf:
+        json.dump([{"data_access": {"has_pii": True}}], tf)
+        tmp_arr = tf.name
+
+    try:
+        assert vendor_main([tmp_arr]) == 2
+    finally:
+        if os.path.exists(tmp_arr):
+            os.remove(tmp_arr)
 
 
 if __name__ == '__main__':
